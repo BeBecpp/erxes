@@ -6,7 +6,7 @@
 - **Project:** `accounting_ui`
 - **Layer:** `Frontend UI`
 - **Path:** `frontend/plugins/accounting_ui`
-- **Last synchronized:** `2026-10-18`
+- **Last synchronized:** `2026-10-19`
 
 ## Scope
 
@@ -35,7 +35,7 @@
 - Provides adjustment navigation and pages for inventory, fixed asset, fund rate, and debt rate adjustments.
 - Provides closing adjustment navigation and pages for temporary account closing.
 - Lists the check-sync rule pages (deal, POS order) in the `CheckSyncNavigation` navigation sub group, shown only on `/accounting/check-sync` routes, so the check-sync page carries no in-page sidebar.
-- `AccountingSidebar` (`src/Sidebar.tsx`) renders the five module links (`MainNavigation`) followed by the adjustment, inventory and fixed asset sections, each a `NavigationSection` row (icon, label, chevron) that unfolds its links with a grid-row transition and opens whenever the route enters its own section (path-segment match) and otherwise keeps the user's open or closed choice. Never use `NavigationMenuGroup` there — its muted, uppercase-styled group label reads as a disabled heading. Below them it renders the route-aware page menus `JournalNavigation` (the transaction journals, only on `/accounting/records`, selected through the `journal` query param) and `CheckSyncNavigation`; keep them route-gated so pages with their own side menu (journal reports) do not show an extra menu on every accounting page.
+- `AccountingSidebar` (`src/Sidebar.tsx`) renders the five module links (`MainNavigation`) followed by the adjustment, inventory and fixed asset sections, each a `NavigationSection` row (icon, label, chevron) that unfolds its links with a grid-row transition and opens whenever the route enters its own section (path-segment match) and otherwise keeps the user's open or closed choice. Never use `NavigationMenuGroup` there — its muted, uppercase-styled group label reads as a disabled heading. Below them it renders the route-aware page menus `ReceiptsNavigation` (branch, department, and journal groups, only on `/accounting/main`, each item toggling the `branchId`, `departmentId`, or `journal` query param), `JournalNavigation` (the transaction journals, only on `/accounting/records`, selected through the `journal` query param) and `CheckSyncNavigation`; keep them route-gated so pages with their own side menu (journal reports) do not show an extra menu on every accounting page.
 - Opens fund, debt, and closing adjustment create/edit forms in `AccountingSheet` panels where those forms exist.
 - Uses system `dealCurrency` options for fund/debt adjustment main and foreign currency fields plus account currency selectors; rate adjustment main currency defaults from system `mainCurrency`.
 - Fetches spot rate from the existing exchange-rate hook when adjustment date, main currency, and foreign currency are selected.
@@ -176,6 +176,7 @@
 - Closing detail forms reuse the generated `IAdjustClosing` view type rather than defining an identical detail alias.
 
 - Saved transaction JSON metadata must not silently become undefined when validation fails; reject invalid metadata before initializing an editable transaction form. Optional null values remain absent and valid extension fields remain intact.
+- The receipts page (`/accounting/main`) passes `sidebarFilters` to `TransactionsFilter`, so branch, department, and journal live only in `ReceiptsNavigation`; every other page using `TransactionsFilter` keeps them in its filter bar and popover.
 - Transaction subscriptions must depend on a stable serialized filter key, not the per-render variables object, so ordinary renders do not cancel pending refreshes.
 
 - Keep GraphQL operation text static and named, without string interpolation. Apollo hooks infer from generated documents; do not supply manual response generics.
