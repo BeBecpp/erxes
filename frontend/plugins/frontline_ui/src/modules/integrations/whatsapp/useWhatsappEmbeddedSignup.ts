@@ -50,9 +50,7 @@ export const useWhatsappEmbeddedSignup = ({
   const [sdkStatus, setSdkStatus] = useState<WhatsappSdkStatus>('idle');
   const [phase, setPhase] = useState<WhatsappSignupPhase>('idle');
   const session = useRef<SignupSession>(newSession());
-  const [finishSignup] = useMutation<{
-    whatsappEmbeddedSignupFinish: WhatsappConnection;
-  }>(WHATSAPP_EMBEDDED_SIGNUP_FINISH);
+  const [finishSignup] = useMutation(WHATSAPP_EMBEDDED_SIGNUP_FINISH);
 
   const appId = config?.isConfigured ? config.appId : undefined;
   const graphVersion = config?.graphVersion;

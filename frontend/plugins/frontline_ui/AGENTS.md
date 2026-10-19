@@ -1093,6 +1093,12 @@ to, bouncedRecipients, retryable, canRetry }` for its delivery state;
   map them to the inbox `IMessageEmbed`, turning a null `description` or
   `image` into `undefined`. Setup fails with `failed` when the created
   integration comes back without an `_id`.
+- WhatsApp documents in `integrations/whatsapp/graphql.ts` are `gql()` from
+  `~/gql`; config reads and saves share `frontlineWhatsappConfigFields`, and
+  the signup finish and connection reads share
+  `frontlineWhatsappConnectionFields`, both spread by name. `WhatsappConfig`,
+  `WhatsappConnection` and `WhatsappEmbeddedSignupConfig` derive from the
+  generated types; row actions take `CellContext<IIntegration>`.
 - Telegram suppresses automatic response-template suggestions while typing;
   the explicit template selector remains available. Preserve other providers'
   composer behavior, Facebook partial-delivery recovery, Instagram error
@@ -2666,17 +2672,17 @@ null }`, fall back to the route pipeline and skip without one; never pass
 
 <!-- Newest first. Keep at most 10 entries. -->
 
+### `2026-10-19` — WhatsApp through Meta Embedded Signup
+
+- **Summary:** Adds the WhatsApp integration with an Embedded Signup–only Add sheet, edit/repair row actions, Meta app config section and native inbox rendering; its documents are typed from codegen.
+- **Affected areas:** `src/modules/integrations/whatsapp`, integration registries/icons/chips, detail and config pages, row actions, native conversation kinds.
+- **Contracts changed:** Consumes the new `frontline_api` WhatsApp GraphQL operations and kind `whatsapp-messenger`.
+
 ### `2026-10-16` — Knowledge scope tree and ticket media
 
 - **Summary:** Topic/category scope for the AI knowledge base source, attachments on the Create ticket action, audio and non-MIME ticket attachments, and covered customer media.
 - **Affected areas:** `widgets/automations/modules/{knowledgebase,ticket}`, `ticket/components/attachments`, `activity/components/NoteInputReadOnly.tsx`.
 - **Contracts changed:** New GraphQL operation `frontlineAiKnowledgeTopics`; knowledge source config keys `topicIds`, `categoryIds`, `articleIds`.
-### `2026-10-15` — WhatsApp through Meta Embedded Signup
-
-- **Summary:** Adds the WhatsApp integration with an Embedded Signup–only Add sheet, edit/repair row actions, Meta app config section and native inbox rendering.
-- **Affected areas:** `src/modules/integrations/whatsapp`, integration registries/icons/chips, detail and config pages, row actions, native conversation kinds.
-- **Contracts changed:** Consumes the new `frontline_api` WhatsApp GraphQL operations and kind `whatsapp-messenger`.
-
 ### `2026-10-06` — Telegram metadata promise handling
 
 - **Summary:** Handles chat-label loader promises explicitly while preserving failure fallbacks and later recovery.

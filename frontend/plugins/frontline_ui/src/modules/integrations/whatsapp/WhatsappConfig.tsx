@@ -70,9 +70,9 @@ const CopyField = ({ value }: { value: string }) => {
 
 const WhatsappConfigForm = ({ config }: { config: WhatsappConfig }) => {
   const { t } = useWhatsappTranslation();
-  const [updateConfig, { loading }] = useMutation<{
-    whatsappUpdateConfig: WhatsappConfig;
-  }>(WHATSAPP_UPDATE_CONFIG, { refetchQueries: ['frontlineWhatsappConfig'] });
+  const [updateConfig, { loading }] = useMutation(WHATSAPP_UPDATE_CONFIG, {
+    refetchQueries: ['frontlineWhatsappConfig'],
+  });
   const form = useForm<ConfigValues>({
     resolver: zodResolver(getWhatsappConfigSchema(t, config.hasAppSecret)),
     defaultValues: {
@@ -189,9 +189,7 @@ const WhatsappConfigForm = ({ config }: { config: WhatsappConfig }) => {
 
 const WhatsappConfigContent = () => {
   const { t } = useWhatsappTranslation();
-  const { data, loading, error, refetch } = useQuery<{
-    whatsappConfig: WhatsappConfig;
-  }>(WHATSAPP_CONFIG);
+  const { data, loading, error, refetch } = useQuery(WHATSAPP_CONFIG);
 
   if (loading) {
     return (

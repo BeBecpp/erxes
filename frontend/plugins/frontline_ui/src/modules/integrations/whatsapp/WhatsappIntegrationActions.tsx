@@ -17,14 +17,10 @@ import { SelectBrand } from 'ui-modules';
 import { z } from 'zod';
 import { useIntegrationDetail } from '@/integrations/hooks/useIntegrationDetail';
 import { useIntegrationEdit } from '@/integrations/hooks/useIntegrationEdit';
-import type { IIntegrationDetail } from '@/integrations/types/Integration';
+import type { IIntegration } from '@/integrations/types/Integration';
 import { parseRepairResult } from '@/integrations/utils/repairResult';
 import { IntegrationType } from '@/types/Integration';
-import {
-  WHATSAPP_CONNECTION,
-  WHATSAPP_REPAIR,
-  WhatsappConnection,
-} from './graphql';
+import { WHATSAPP_CONNECTION, WHATSAPP_REPAIR } from './graphql';
 import { WhatsappTranslationKey, useWhatsappTranslation } from './translations';
 
 const getEditSchema = (t: (key: WhatsappTranslationKey) => string) =>
@@ -35,11 +31,15 @@ const getEditSchema = (t: (key: WhatsappTranslationKey) => string) =>
 
 type EditValues = z.infer<ReturnType<typeof getEditSchema>>;
 
-const WhatsappNumberDetails = ({ integrationId }: { integrationId: string }) => {
+const WhatsappNumberDetails = ({
+  integrationId,
+}: {
+  integrationId: string;
+}) => {
   const { t } = useWhatsappTranslation();
-  const { data, loading, error } = useQuery<{
-    whatsappConnection: WhatsappConnection | null;
-  }>(WHATSAPP_CONNECTION, { variables: { integrationId } });
+  const { data, loading, error } = useQuery(WHATSAPP_CONNECTION, {
+    variables: { integrationId },
+  });
   const connection = data?.whatsappConnection;
 
   if (loading) return <Spinner size="sm" />;
@@ -54,9 +54,7 @@ const WhatsappNumberDetails = ({ integrationId }: { integrationId: string }) => 
 
   if (!connection) {
     return (
-      <p className="text-sm text-muted-foreground">
-        {t('connectionMissing')}
-      </p>
+      <p className="text-sm text-muted-foreground">{t('connectionMissing')}</p>
     );
   }
 
@@ -185,7 +183,7 @@ const WhatsappIntegrationEditForm = ({
 export const WhatsappIntegrationActions = ({
   cell,
 }: {
-  cell: CellContext<IIntegrationDetail, unknown>;
+  cell: CellContext<IIntegration, unknown>;
 }) => {
   const { t } = useWhatsappTranslation();
   const [open, setOpen] = useState(false);
@@ -218,13 +216,12 @@ export const WhatsappIntegrationActions = ({
 export const WhatsappIntegrationRepair = ({
   cell,
 }: {
-  cell: CellContext<IIntegrationDetail, unknown>;
+  cell: CellContext<IIntegration, unknown>;
 }) => {
   const { t } = useWhatsappTranslation();
-  const [repair, { loading }] = useMutation<{ integrationsRepair: unknown }>(
-    WHATSAPP_REPAIR,
-    { refetchQueries: ['Integrations'] },
-  );
+  const [repair, { loading }] = useMutation(WHATSAPP_REPAIR, {
+    refetchQueries: ['Integrations'],
+  });
 
   const handleRepair = () => {
     if (loading) return;

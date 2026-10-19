@@ -78,8 +78,8 @@ const WhatsappConnectStep = ({
         {phase === 'verifying'
           ? t('verifying')
           : phase === 'waiting'
-            ? t('openingMeta')
-            : t('continueWithMeta')}
+          ? t('openingMeta')
+          : t('continueWithMeta')}
       </Button>
       {sdkStatus === 'error' ? (
         <p role="alert" className="text-sm text-destructive">
@@ -224,9 +224,10 @@ const WhatsappSetupStep = ({
 const WhatsappSetup = ({ onClose }: { onClose: () => void }) => {
   const { t } = useWhatsappTranslation();
   const [connection, setConnection] = useState<WhatsappConnection>();
-  const { data, loading, error, refetch } = useQuery<{
-    whatsappEmbeddedSignupConfig: WhatsappEmbeddedSignupConfig;
-  }>(WHATSAPP_EMBEDDED_SIGNUP_CONFIG, { fetchPolicy: 'network-only' });
+  const { data, loading, error, refetch } = useQuery(
+    WHATSAPP_EMBEDDED_SIGNUP_CONFIG,
+    { fetchPolicy: 'network-only' },
+  );
   const { id: channelId } = useParams<{ id: string }>();
   const { addIntegration, loading: creating } = useIntegrationAdd();
   const config = data?.whatsappEmbeddedSignupConfig;
@@ -239,7 +240,7 @@ const WhatsappSetup = ({ onClose }: { onClose: () => void }) => {
         kind: IntegrationType.WHATSAPP_MESSENGER,
         name: values.name.trim(),
         brandId: values.brandId,
-        channelId,
+        channelId: channelId ?? '',
         data: {
           connectionId: connection._id,
           ...(values.pin ? { pin: values.pin } : {}),
