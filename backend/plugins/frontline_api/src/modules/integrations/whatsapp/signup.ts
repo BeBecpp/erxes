@@ -14,6 +14,7 @@ import {
   inspectAccessToken,
   listWabaPhoneNumberIds,
 } from '@/integrations/whatsapp/graphApi';
+import { assertWabaAvailable } from '@/integrations/whatsapp/wabaOwnership';
 
 const metaIdSchema = z.string().regex(/^\d+$/, 'Invalid Meta id');
 
@@ -70,10 +71,12 @@ export const assertWhatsappTokenGrants = (
  */
 export const finishWhatsappEmbeddedSignup = async ({
   models,
+  subdomain,
   userId,
   input,
 }: {
   models: IModels;
+  subdomain: string;
   userId: string;
   input: WhatsappSignupFinishInput;
 }): Promise<IWhatsappConnectionView> => {
@@ -102,6 +105,8 @@ export const finishWhatsappEmbeddedSignup = async ({
       'The selected phone number does not belong to the shared WhatsApp Business Account.',
     );
   }
+
+  await assertWabaAvailable(wabaId, subdomain);
 
   const phone = await getPhoneNumber(accessToken, phoneNumberId);
 

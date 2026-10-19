@@ -78,6 +78,8 @@
   A status that arrives before its reply is stored waits briefly, then fails
   the webhook so Meta redelivers it. An unattached signup connection is
   discarded when the setup sheet closes and otherwise expires after a day.
+  On SaaS a WhatsApp Business Account belongs to one workspace: signup,
+  create and repair refuse a WABA another workspace owns.
 
 - Telegram bot setup and webhook status; private chats, groups, channels and
   forum topics; text, files, media, polls, edits, observed reactions and visible
@@ -1356,6 +1358,10 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
   connection until it is attached; a TTL index deletes it after 24 hours.
   Redis key `whatsapp:in-flight:<subdomain>:<wamid>` (15 minutes) marks a
   reply sent to WhatsApp whose inbox message may not be stored yet.
+- SaaS only: `whatsapp_waba_owners` in the cross-workspace database
+  `erxes_frontline_whatsapp` (`wabaOwnership.ts`) maps a WABA id to the
+  owning subdomain. It is the plugin's only data outside the tenant
+  database; self-hosted never reads or writes it.
 - Telegram bot tokens and webhook secrets are server-only. Provider IDs are
   strings; deduplication, poll/reaction updates and reply lookup are scoped by
   tenant, integration and chat, with topic identity included where applicable.
@@ -1409,6 +1415,10 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
   other attached number shares it. Core customers are looked up and created
   under the stable `whatsapp-<customer _id>` so concurrent webhooks converge;
   a status for an in-flight reply is never acknowledged before it is applied.
+  On SaaS one shared Meta app keeps a single callback per WABA, so a WABA is
+  claimed (`claimWaba`) before its webhook is pointed at a workspace, released
+  when the workspace's last number from it is removed or a failed create
+  leaves none, and never unsubscribed by a workspace that does not own it.
   The webhook resolves `localhost` in development, like Facebook, so realtime
   topics match the browser. The WhatsApp module imports no helper from
   another integration. Inbound media keeps its MIME type only when it is on
@@ -1610,9 +1620,9 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
 
 ### `2026-10-19` — WhatsApp delivery, customer and signup hardening
 
-- **Summary:** Statuses that beat their reply are retried instead of dropped, Core customers use a stable id, abandoned signup connections are discarded or expire, inbound files cannot be stored as browser-rendered documents, and the webhook compares its verify token in constant time and resolves `localhost` in development.
+- **Summary:** On SaaS a WABA belongs to one workspace, statuses that beat their reply are retried instead of dropped, Core customers use a stable id, abandoned signup connections are discarded or expire, inbound files cannot be stored as browser-rendered documents, and the webhook compares its verify token in constant time and resolves `localhost` in development.
 - **Affected areas:** `src/modules/integrations/whatsapp` (statuses, store, send, webhook, signup, message broker, schema).
-- **Contracts changed:** New GraphQL `whatsappDiscardConnection(_id)`; `whatsappConfig.verifyToken` is empty on SaaS; `whatsapp_integrations.pendingSince` with a TTL index; inbound attachments outside the safe MIME list are stored as `application/octet-stream`.
+- **Contracts changed:** SaaS cross-workspace collection `erxes_frontline_whatsapp.whatsapp_waba_owners`; new GraphQL `whatsappDiscardConnection(_id)`; `whatsappConfig.verifyToken` is empty on SaaS; `whatsapp_integrations.pendingSince` with a TTL index; inbound attachments outside the safe MIME list are stored as `application/octet-stream`.
 
 ### `2026-10-18` — Ticket remembered through action placement
 

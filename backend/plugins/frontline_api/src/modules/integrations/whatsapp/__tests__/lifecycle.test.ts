@@ -11,8 +11,10 @@ import {
   handleWhatsappIntegration,
   whatsappCreateIntegration,
   whatsappRemoveIntegration,
+  whatsappRepairIntegration,
   whatsappStatus,
 } from '../messageBroker';
+import { claimWaba, getWabaOwner, releaseWaba } from '../wabaOwnership';
 import { whatsappMutations } from '../graphql/resolvers/mutations';
 import { assertWhatsappTokenGrants } from '../signup';
 
@@ -36,6 +38,11 @@ jest.mock('../graphApi', () => {
     unsubscribeWabaWebhooks: jest.fn(),
   };
 });
+jest.mock('../wabaOwnership', () => ({
+  claimWaba: jest.fn(),
+  getWabaOwner: jest.fn(),
+  releaseWaba: jest.fn(),
+}));
 jest.mock('../controller/sendMessage', () => ({
   sendWhatsappReply: jest.fn(),
   describeWhatsappSendError: (error: Error) => error.message,
@@ -56,6 +63,7 @@ const models = {
     exists: jest.fn(),
     updateOne: jest.fn(),
     deleteOne: jest.fn(),
+    markHealth: jest.fn(),
   },
   WhatsappCustomers: { deleteMany: jest.fn() },
   Integrations: { exists: jest.fn() },
@@ -184,6 +192,97 @@ describe('whatsappRemoveIntegration', () => {
     expect(models.WhatsappIntegrations.deleteOne).toHaveBeenCalledWith({
       _id: 'conn-1',
     });
+  });
+});
+
+describe('WABA ownership in the integration lifecycle', () => {
+  const owned =
+    'This WhatsApp Business Account is already connected to another erxes workspace.';
+  const findOneWith = (value: unknown) => ({
+    select: jest.fn().mockResolvedValue(value),
+  });
+
+  it('claims the WABA before registering or subscribing anything', async () => {
+    jest.mocked(claimWaba).mockRejectedValueOnce(new Error(owned));
+
+    await expect(
+      whatsappCreateIntegration({
+        subdomain: 'tenant-a',
+        data: createData({ connectionId: 'conn-1' }),
+      }),
+    ).rejects.toThrow(owned);
+    expect(claimWaba).toHaveBeenCalledWith('waba-1', 'tenant-a');
+    expect(registerPhoneNumber).not.toHaveBeenCalled();
+    expect(subscribeWabaWebhooks).not.toHaveBeenCalled();
+  });
+
+  it('releases the claim when connecting fails and no number uses the WABA', async () => {
+    jest
+      .mocked(subscribeWabaWebhooks)
+      .mockRejectedValueOnce(new Error('Meta down'));
+    jest.mocked(models.WhatsappIntegrations.exists).mockResolvedValue(null);
+
+    await expect(
+      whatsappCreateIntegration({
+        subdomain: 'tenant-a',
+        data: createData({ connectionId: 'conn-1', pin: '123456' }),
+      }),
+    ).rejects.toThrow('Meta down');
+    expect(releaseWaba).toHaveBeenCalledWith('waba-1', 'tenant-a');
+  });
+
+  it('never unsubscribes or releases a WABA another workspace owns', async () => {
+    jest
+      .mocked(models.WhatsappIntegrations.findOne)
+      .mockReturnValue(findOneWith(connection) as never);
+    jest.mocked(models.WhatsappIntegrations.exists).mockResolvedValue(null);
+    jest.mocked(getWabaOwner).mockResolvedValueOnce('tenant-b');
+
+    await whatsappRemoveIntegration({
+      subdomain: 'tenant-a',
+      data: { integrationId: 'inbox-1' },
+    });
+
+    expect(unsubscribeWabaWebhooks).not.toHaveBeenCalled();
+    expect(releaseWaba).not.toHaveBeenCalled();
+    expect(models.WhatsappIntegrations.deleteOne).toHaveBeenCalledWith({
+      _id: 'conn-1',
+    });
+  });
+
+  it('releases its own WABA when the last number is removed', async () => {
+    jest
+      .mocked(models.WhatsappIntegrations.findOne)
+      .mockReturnValue(findOneWith(connection) as never);
+    jest.mocked(models.WhatsappIntegrations.exists).mockResolvedValue(null);
+    jest.mocked(getWabaOwner).mockResolvedValueOnce('tenant-a');
+
+    await whatsappRemoveIntegration({
+      subdomain: 'tenant-a',
+      data: { integrationId: 'inbox-1' },
+    });
+
+    expect(unsubscribeWabaWebhooks).toHaveBeenCalledWith('token', 'waba-1');
+    expect(releaseWaba).toHaveBeenCalledWith('waba-1', 'tenant-a');
+  });
+
+  it('refuses to repair a WABA another workspace owns', async () => {
+    jest
+      .mocked(models.WhatsappIntegrations.findOne)
+      .mockReturnValue(findOneWith(connection) as never);
+    jest.mocked(claimWaba).mockRejectedValueOnce(new Error(owned));
+
+    await expect(
+      whatsappRepairIntegration({
+        subdomain: 'tenant-a',
+        data: { integrationId: 'inbox-1' },
+      }),
+    ).resolves.toEqual({ status: 'error', errorMessage: owned });
+    expect(subscribeWabaWebhooks).not.toHaveBeenCalled();
+    expect(models.WhatsappIntegrations.markHealth).toHaveBeenCalledWith(
+      'conn-1',
+      owned,
+    );
   });
 });
 

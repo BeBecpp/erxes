@@ -17,6 +17,11 @@ import {
 } from '@/integrations/whatsapp/controller/sendMessage';
 import { debugWhatsapp } from '@/integrations/whatsapp/debuggers';
 import {
+  claimWaba,
+  getWabaOwner,
+  releaseWaba,
+} from '@/integrations/whatsapp/wabaOwnership';
+import {
   WhatsappGraphError,
   getPhoneNumber,
   registerPhoneNumber,
@@ -111,6 +116,20 @@ const connectWebhooks = async (
   return phone.status;
 };
 
+/** Frees the WABA when a failed attach leaves this workspace with no number from it. */
+const releaseWabaIfUnused = async (
+  models: IModels,
+  subdomain: string,
+  wabaId: string,
+): Promise<void> => {
+  const used = await models.WhatsappIntegrations.exists({
+    wabaId,
+    erxesApiId: { $exists: true },
+  });
+
+  if (!used) await releaseWaba(wabaId, subdomain);
+};
+
 /** Attaches a pending Embedded Signup connection to the new inbox integration. */
 export const whatsappCreateIntegration = async ({
   subdomain,
@@ -151,9 +170,17 @@ export const whatsappCreateIntegration = async ({
     throw new Error('This WhatsApp number is already connected to an inbox');
   }
 
-  await registerIfNeeded(models, connection, parsed.data.pin);
+  await claimWaba(connection.wabaId, subdomain);
 
-  const phoneStatus = await connectWebhooks(models, subdomain, connection);
+  let phoneStatus: string | undefined;
+
+  try {
+    await registerIfNeeded(models, connection, parsed.data.pin);
+    phoneStatus = await connectWebhooks(models, subdomain, connection);
+  } catch (error) {
+    await releaseWabaIfUnused(models, subdomain, connection.wabaId);
+    throw error;
+  }
 
   const attached = await models.WhatsappIntegrations.updateOne(
     {
@@ -171,6 +198,7 @@ export const whatsappCreateIntegration = async ({
   );
 
   if (!attached.modifiedCount) {
+    await releaseWabaIfUnused(models, subdomain, connection.wabaId);
     throw new Error(
       'This WhatsApp number was connected to another inbox meanwhile',
     );
@@ -201,14 +229,18 @@ export const whatsappRemoveIntegration = async ({
     wabaId: connection.wabaId,
     erxesApiId: { $exists: true },
   });
+  const owner = await getWabaOwner(connection.wabaId);
 
-  if (!wabaStillUsed) {
+  // Never unsubscribe a WABA another workspace owns: it would cut its webhooks.
+  if (!wabaStillUsed && (!owner || owner === subdomain)) {
     try {
       await unsubscribeWabaWebhooks(connection.accessToken, connection.wabaId);
     } catch (error) {
       // Webhooks for an unknown number are ignored, so removal still succeeds.
       debugWhatsapp(`WhatsApp unsubscribe failed: ${errorMessage(error)}`);
     }
+
+    await releaseWaba(connection.wabaId, subdomain);
   }
 
   await models.WhatsappCustomers.deleteMany({
@@ -237,6 +269,8 @@ export const whatsappRepairIntegration = async ({
   }
 
   try {
+    // Also claims WABAs connected before ownership was recorded.
+    await claimWaba(connection.wabaId, subdomain);
     await registerIfNeeded(models, connection);
 
     const phoneStatus = await connectWebhooks(models, subdomain, connection);

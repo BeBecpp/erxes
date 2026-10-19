@@ -57,12 +57,13 @@ export const whatsappMutations = {
   async whatsappEmbeddedSignupFinish(
     _root: undefined,
     input: WhatsappSignupFinishInput,
-    { models, user, checkPermission }: IContext,
+    { models, subdomain, user, checkPermission }: IContext,
   ): Promise<IWhatsappConnectionView> {
     await checkPermission('integrationsAdd');
 
     return finishWhatsappEmbeddedSignup({
       models,
+      subdomain,
       userId: user._id,
       input,
     });
