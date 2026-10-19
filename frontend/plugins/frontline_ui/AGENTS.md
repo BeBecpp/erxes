@@ -21,7 +21,7 @@
 - The `Move to channel` action on every channel-owned resource: integrations,
   ticket pipelines, forms, surveys and response templates.
 - Integration connect/detail UIs for Mail, Facebook, Instagram, Discord, Telegram,
-  calls, Call Pro, and the erxes messenger.
+  WhatsApp, calls, Call Pro, and the erxes messenger.
 - The mail conversation surface: the threaded reader, its compose box, the
   quoted-content toggle, the sandboxed email body renderer, and delivery state
   and resend.
@@ -99,6 +99,15 @@
   (`image`, `audio`, `file`) render like MIME types; audio plays inline. Media
   at an external URL (not `read-file`) — what a customer sent — stays covered
   as "Sent by customer · not reviewed" until someone chooses to show it.
+- WhatsApp connects only through Meta Embedded Signup: the Add sheet runs
+  Meta's popup (business portfolio, WABA, phone number and its verification
+  happen there — no Facebook Page or personal account list), then a setup step
+  shows the verified number and collects the inbox name, brand and, only for an
+  unregistered number, an optional 6-digit PIN. Creation goes through the
+  shared `useIntegrationAdd`. Row actions edit name/brand (number shown
+  read-only) and repair the connection. Integrations config holds the Meta app
+  settings (hidden on SaaS) with the copyable webhook URL. WhatsApp
+  conversations render with the native inbox messages and composer.
 
 - Telegram setup derives its public address from `REACT_APP_API_URL` and the
   existing `/pl:frontline` gateway route. Local/non-public API addresses require
@@ -605,6 +614,14 @@
 
 ## Architecture
 
+WhatsApp lives in `src/modules/integrations/whatsapp/`: `embeddedSignup.ts`
+loads the Facebook SDK and parses Meta's `WA_EMBEDDED_SIGNUP` messages,
+`useWhatsappEmbeddedSignup.ts` runs the popup and the finish mutation,
+`WhatsappIntegrationDetail.tsx` is the two-step Add sheet,
+`WhatsappIntegrationActions.tsx` holds edit/repair, `WhatsappConfig.tsx` the
+config section, and `translations.ts` the plugin-owned `frontline-whatsapp`
+namespace.
+
 Telegram setup and provider-specific presentation live in
 `src/modules/integrations/telegram/`. It reuses `ComposerShell`, `ComposerEditor`,
 `ComposerToolbar`, `useComposerSend`, `messageReplyState` and `MessageAttachments`.
@@ -758,6 +775,15 @@ owns the setup form and connection actions.
 
 ### Consumes
 
+- `frontline_api` WhatsApp GraphQL: `frontlineWhatsappConfig`,
+  `frontlineWhatsappUpdateConfig`, `frontlineWhatsappEmbeddedSignupConfig`,
+  `frontlineWhatsappEmbeddedSignupFinish`, `frontlineWhatsappConnection`,
+  `frontlineWhatsappRepair` (`integrationsRepair`), plus the shared
+  `IntegrationsCreateExternalIntegration` with kind `whatsapp-messenger` and
+  data `{ connectionId, pin? }`.
+- The Facebook JS SDK (`connect.facebook.net`) loaded at runtime for Embedded
+  Signup; messages are accepted only from HTTPS `facebook.com` origins.
+
 - `ui-modules` `AutomationConditionalField` for conditional action values; it
   is a drop-in for `Form.Field` taking the action form, the field names, a label
   and the same `render`. It needs the automations host's
@@ -909,6 +935,11 @@ to, bouncedRecipients, retryable, canRetry }` for its delivery state;
 
 ## Data and State
 
+- WhatsApp setup keeps the verified connection in component state; it is a
+  server-side pending connection until the inbox integration is created. The
+  Embedded Signup session (code, FINISH data, timers) lives in a ref inside
+  `useWhatsappEmbeddedSignup` and is cleared on settle and unmount.
+
 - Telegram reply selection uses the inbox `messageReplyState`; provider IDs
   come from `extraData.telegram.messageId` or the first outbound `messageIds`
   receipt. The existing conversation-change cleanup and user/conversation
@@ -1013,6 +1044,11 @@ to, bouncedRecipients, retryable, canRetry }` for its delivery state;
   no `./frontlineSettings` expose; old `/settings/frontline/…` URLs are redirected
   by core. The settings navigation renders no `Sidebar.GroupLabel`.
 - Page header breadcrumbs follow the shared pattern: crumbs are default ghost `Button`s (no `font-semibold`), the first crumb carries a 16px icon in the default text color, crumbs are separated by `Separator.Inline` or `Breadcrumb.Separator`, and settings pages carry no favorite toggle.
+- WhatsApp onboarding stays Embedded Signup only — never add Facebook Page or
+  personal-account selection. `FB.login` must run synchronously inside the
+  click handler with the SDK already preloaded, or browsers block the popup.
+  The signup code is sent to the server immediately; never store it.
+
 - The conversations filter bar header (`ConversationsHeader`) uses
   `bg-background`, matching the host's `PageHeader` and `PageSubHeader`, never
   the sidebar tint.
@@ -2513,6 +2549,11 @@ null }`, fall back to the route pipeline and skip without one; never pass
   Telegram setup/rendering and inbox composer regression coverage.
   Composer send regression tests import `hooks/composer/useComposerSend`;
   keep them aligned with the production hook when composer paths change.
+- WhatsApp smoke: save Meta app settings in Integrations config, open a
+  channel's WhatsApp page, run Connect WhatsApp through Meta's popup, create
+  the inbox and confirm it appears in the list without a reload; edit its name
+  and brand, run Repair, and confirm an unconfigured workspace shows the
+  config link instead of the Meta button.
 - Telegram smoke: config-page personal/team inbox links, production callback
   defaults, local tunnel validation, saved callback preservation, optional
   connection names, private/group/topic history,
@@ -2630,6 +2671,11 @@ null }`, fall back to the route pipeline and skip without one; never pass
 - **Summary:** Topic/category scope for the AI knowledge base source, attachments on the Create ticket action, audio and non-MIME ticket attachments, and covered customer media.
 - **Affected areas:** `widgets/automations/modules/{knowledgebase,ticket}`, `ticket/components/attachments`, `activity/components/NoteInputReadOnly.tsx`.
 - **Contracts changed:** New GraphQL operation `frontlineAiKnowledgeTopics`; knowledge source config keys `topicIds`, `categoryIds`, `articleIds`.
+### `2026-10-15` — WhatsApp through Meta Embedded Signup
+
+- **Summary:** Adds the WhatsApp integration with an Embedded Signup–only Add sheet, edit/repair row actions, Meta app config section and native inbox rendering.
+- **Affected areas:** `src/modules/integrations/whatsapp`, integration registries/icons/chips, detail and config pages, row actions, native conversation kinds.
+- **Contracts changed:** Consumes the new `frontline_api` WhatsApp GraphQL operations and kind `whatsapp-messenger`.
 
 ### `2026-10-06` — Telegram metadata promise handling
 

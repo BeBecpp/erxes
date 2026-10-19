@@ -1,0 +1,94 @@
+import type { Request, Response } from 'express';
+import { getSubdomain } from 'erxes-api-shared/utils';
+import { generateModels } from '~/connectionResolvers';
+import { WHATSAPP_CONFIG_CODES } from '@/integrations/whatsapp/constants';
+import { getWhatsappConfig } from '@/integrations/whatsapp/config';
+import { receiveWhatsappChange } from '@/integrations/whatsapp/controller/receiveMessage';
+import { debugWhatsapp } from '@/integrations/whatsapp/debuggers';
+import { whatsappWebhookSchema } from '@/integrations/whatsapp/utils/payload';
+import { hasValidWhatsappSignature } from '@/integrations/whatsapp/utils/signature';
+
+type RawBodyRequest = Request & { rawBody?: Buffer };
+
+/** Answers Meta's subscription challenge with the tenant verify token. */
+export const verifyWhatsappWebhook = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  const models = await generateModels(getSubdomain(req));
+  const verifyToken = await getWhatsappConfig(
+    models,
+    WHATSAPP_CONFIG_CODES.VERIFY_TOKEN,
+  );
+  const challenge = req.query['hub.challenge'];
+
+  if (
+    req.query['hub.mode'] === 'subscribe' &&
+    verifyToken &&
+    req.query['hub.verify_token'] === verifyToken &&
+    typeof challenge === 'string'
+  ) {
+    res.status(200).type('text/plain').send(challenge);
+    return;
+  }
+
+  res.sendStatus(403);
+};
+
+/**
+ * Authenticates and ingests a WhatsApp webhook. Failures return 500 so Meta
+ * retries; ingestion is idempotent per WhatsApp message id.
+ */
+export const receiveWhatsappWebhook = async (
+  req: RawBodyRequest,
+  res: Response,
+): Promise<void> => {
+  const subdomain = getSubdomain(req);
+  const models = await generateModels(subdomain);
+  const appSecret = await getWhatsappConfig(
+    models,
+    WHATSAPP_CONFIG_CODES.APP_SECRET,
+  );
+
+  if (
+    !hasValidWhatsappSignature(
+      req.rawBody,
+      req.get('x-hub-signature-256'),
+      appSecret,
+    )
+  ) {
+    res.sendStatus(401);
+    return;
+  }
+
+  const payload = whatsappWebhookSchema.safeParse(req.body);
+
+  if (
+    !payload.success ||
+    payload.data.object !== 'whatsapp_business_account'
+  ) {
+    res.sendStatus(200);
+    return;
+  }
+
+  try {
+    for (const entry of payload.data.entry) {
+      for (const change of entry.changes) {
+        if (change.field === 'messages') {
+          await receiveWhatsappChange({
+            models,
+            subdomain,
+            value: change.value,
+          });
+        }
+      }
+    }
+
+    res.sendStatus(200);
+  } catch (error) {
+    debugWhatsapp(
+      `WhatsApp webhook failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    res.sendStatus(500);
+  }
+};

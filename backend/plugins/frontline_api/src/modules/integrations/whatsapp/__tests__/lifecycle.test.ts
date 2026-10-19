@@ -1,0 +1,248 @@
+import type { IModels } from '~/connectionResolvers';
+import { generateModels } from '~/connectionResolvers';
+import {
+  WhatsappGraphError,
+  getPhoneNumber,
+  registerPhoneNumber,
+  subscribeWabaWebhooks,
+  unsubscribeWabaWebhooks,
+} from '../graphApi';
+import {
+  handleWhatsappIntegration,
+  whatsappCreateIntegration,
+  whatsappRemoveIntegration,
+} from '../messageBroker';
+import { assertWhatsappTokenGrants } from '../signup';
+
+jest.mock('~/connectionResolvers', () => ({ generateModels: jest.fn() }));
+jest.mock('../config', () => ({
+  ensureWhatsappVerifyToken: jest.fn().mockResolvedValue('verify-token'),
+  getWhatsappWebhookUrl: jest
+    .fn()
+    .mockReturnValue('https://tenant.example.com/pl:frontline/whatsapp/webhook'),
+}));
+jest.mock('../graphApi', () => {
+  const actual = jest.requireActual('../graphApi');
+
+  return {
+    WhatsappGraphError: actual.WhatsappGraphError,
+    getPhoneNumber: jest.fn(),
+    registerPhoneNumber: jest.fn(),
+    subscribeWabaWebhooks: jest.fn(),
+    unsubscribeWabaWebhooks: jest.fn(),
+  };
+});
+jest.mock('../controller/sendMessage', () => ({
+  sendWhatsappReply: jest.fn(),
+  describeWhatsappSendError: (error: Error) => error.message,
+}));
+
+const connection = {
+  _id: 'conn-1',
+  wabaId: 'waba-1',
+  phoneNumberId: '111',
+  phoneStatus: 'PENDING',
+  accessToken: 'token',
+};
+
+const models = {
+  WhatsappIntegrations: {
+    getConnection: jest.fn(),
+    findOne: jest.fn(),
+    exists: jest.fn(),
+    updateOne: jest.fn(),
+    deleteOne: jest.fn(),
+  },
+  WhatsappCustomers: { deleteMany: jest.fn() },
+  Integrations: { exists: jest.fn() },
+} as unknown as IModels;
+
+const createData = (data: object) => ({
+  integrationId: 'inbox-1',
+  kind: 'whatsapp-messenger',
+  data: JSON.stringify(data),
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  jest.mocked(generateModels).mockResolvedValue(models);
+  jest
+    .mocked(models.WhatsappIntegrations.getConnection)
+    .mockResolvedValue(connection as never);
+  jest.mocked(models.Integrations.exists).mockResolvedValue(null);
+  jest
+    .mocked(models.WhatsappIntegrations.updateOne)
+    .mockResolvedValue({ modifiedCount: 1 } as never);
+  jest
+    .mocked(getPhoneNumber)
+    .mockResolvedValue({
+      id: '111',
+      display_phone_number: '+976 9911 2233',
+      status: 'CONNECTED',
+    });
+});
+
+describe('whatsappCreateIntegration', () => {
+  it('registers a pending number, subscribes the tenant webhook and attaches it', async () => {
+    await expect(
+      whatsappCreateIntegration({
+        subdomain: 'tenant',
+        data: createData({ connectionId: 'conn-1' }),
+      }),
+    ).resolves.toEqual({ status: 'success' });
+
+    expect(registerPhoneNumber).toHaveBeenCalledWith(
+      'token',
+      '111',
+      expect.stringMatching(/^\d{6}$/),
+    );
+    expect(subscribeWabaWebhooks).toHaveBeenCalledWith('token', 'waba-1', {
+      url: 'https://tenant.example.com/pl:frontline/whatsapp/webhook',
+      verifyToken: 'verify-token',
+    });
+    expect(models.WhatsappIntegrations.updateOne).toHaveBeenLastCalledWith(
+      { _id: 'conn-1', erxesApiId: { $exists: false } },
+      {
+        $set: {
+          erxesApiId: 'inbox-1',
+          phoneStatus: 'CONNECTED',
+          healthStatus: 'healthy',
+        },
+        $unset: { error: '' },
+      },
+    );
+  });
+
+  it('asks for the existing PIN when the number has two-step verification', async () => {
+    jest
+      .mocked(registerPhoneNumber)
+      .mockRejectedValueOnce(new WhatsappGraphError('PIN mismatch', 133005));
+
+    await expect(
+      whatsappCreateIntegration({
+        subdomain: 'tenant',
+        data: createData({ connectionId: 'conn-1' }),
+      }),
+    ).rejects.toThrow('Enter its 6-digit PIN');
+    expect(subscribeWabaWebhooks).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed PINs and numbers already attached to a live inbox', async () => {
+    await expect(
+      whatsappCreateIntegration({
+        subdomain: 'tenant',
+        data: createData({ connectionId: 'conn-1', pin: '12' }),
+      }),
+    ).rejects.toThrow('exactly 6 digits');
+
+    jest
+      .mocked(models.WhatsappIntegrations.getConnection)
+      .mockResolvedValueOnce({ ...connection, erxesApiId: 'other' } as never);
+    jest
+      .mocked(models.Integrations.exists)
+      .mockResolvedValueOnce({ _id: 'other' } as never);
+
+    await expect(
+      whatsappCreateIntegration({
+        subdomain: 'tenant',
+        data: createData({ connectionId: 'conn-1' }),
+      }),
+    ).rejects.toThrow('already connected');
+  });
+});
+
+describe('whatsappRemoveIntegration', () => {
+  const findOneWith = (value: unknown) => ({
+    select: jest.fn().mockResolvedValue(value),
+  });
+
+  it('unsubscribes the WABA only when no other inbox uses it', async () => {
+    jest
+      .mocked(models.WhatsappIntegrations.findOne)
+      .mockReturnValue(findOneWith(connection) as never);
+    jest
+      .mocked(models.WhatsappIntegrations.exists)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: 'conn-2' } as never);
+
+    await whatsappRemoveIntegration({
+      subdomain: 'tenant',
+      data: { integrationId: 'inbox-1' },
+    });
+    expect(unsubscribeWabaWebhooks).toHaveBeenCalledWith('token', 'waba-1');
+
+    await whatsappRemoveIntegration({
+      subdomain: 'tenant',
+      data: { integrationId: 'inbox-1' },
+    });
+    expect(unsubscribeWabaWebhooks).toHaveBeenCalledTimes(1);
+    expect(models.WhatsappCustomers.deleteMany).toHaveBeenCalledWith({
+      integrationId: 'inbox-1',
+    });
+    expect(models.WhatsappIntegrations.deleteOne).toHaveBeenCalledWith({
+      _id: 'conn-1',
+    });
+  });
+});
+
+describe('handleWhatsappIntegration', () => {
+  it('refuses a reply whose payload targets another integration', async () => {
+    await expect(
+      handleWhatsappIntegration({
+        subdomain: 'tenant',
+        data: {
+          type: 'whatsapp',
+          action: 'reply-messenger',
+          integrationId: 'inbox-1',
+          payload: JSON.stringify({ integrationId: 'inbox-2' }),
+        },
+      }),
+    ).resolves.toEqual({
+      status: 'error',
+      errorMessage: 'WhatsApp reply integration does not match its destination',
+    });
+  });
+});
+
+describe('assertWhatsappTokenGrants', () => {
+  const app = {
+    appId: 'app-1',
+    appSecret: 's',
+    configId: 'c',
+    verifyToken: 'v',
+  };
+  const validToken = {
+    is_valid: true,
+    app_id: 'app-1',
+    scopes: ['whatsapp_business_management', 'whatsapp_business_messaging'],
+    granular_scopes: [
+      { scope: 'whatsapp_business_management', target_ids: ['waba-1'] },
+    ],
+  };
+
+  it('accepts a token for this app that covers the WABA', () => {
+    expect(() =>
+      assertWhatsappTokenGrants(app, validToken, 'waba-1'),
+    ).not.toThrow();
+  });
+
+  it('rejects other apps, missing scopes and unshared WABAs', () => {
+    expect(() =>
+      assertWhatsappTokenGrants(
+        app,
+        { ...validToken, app_id: 'app-2' },
+        'waba-1',
+      ),
+    ).toThrow('different app');
+    expect(() =>
+      assertWhatsappTokenGrants(
+        app,
+        { ...validToken, scopes: ['whatsapp_business_management'] },
+        'waba-1',
+      ),
+    ).toThrow('whatsapp_business_messaging');
+    expect(() =>
+      assertWhatsappTokenGrants(app, validToken, 'waba-2'),
+    ).toThrow('did not share');
+  });
+});

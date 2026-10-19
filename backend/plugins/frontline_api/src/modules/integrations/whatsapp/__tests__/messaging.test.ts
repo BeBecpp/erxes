@@ -1,0 +1,233 @@
+import type { IModels } from '~/connectionResolvers';
+import { graphqlPubsub } from 'erxes-api-shared/utils';
+import { pConversationClientMessageInserted } from '@/inbox/graphql/resolvers/mutations/widget';
+import { receiveWhatsappStatus } from '../controller/statuses';
+import {
+  buildWhatsappReplyParts,
+  describeWhatsappSendError,
+  sendWhatsappReply,
+} from '../controller/sendMessage';
+import { WhatsappGraphError, sendWhatsappMessage } from '../graphApi';
+
+jest.mock('~/connectionResolvers', () => ({}));
+jest.mock('erxes-api-shared/utils', () => ({
+  graphqlPubsub: { publish: jest.fn() },
+}));
+jest.mock('@/inbox/graphql/resolvers/mutations/widget', () => ({
+  pConversationClientMessageInserted: jest.fn(),
+}));
+jest.mock('@/inbox/receiveMessage', () => ({ receiveInboxMessage: jest.fn() }));
+jest.mock('@/integrations/facebook/commonUtils', () => ({
+  generateAttachmentUrl: (_subdomain: string, url: string) =>
+    `https://files.example.com/${url}`,
+}));
+jest.mock('../graphApi', () => {
+  const actual = jest.requireActual('../graphApi');
+
+  return {
+    WhatsappGraphError: actual.WhatsappGraphError,
+    sendWhatsappMessage: jest.fn(),
+  };
+});
+
+const customer = { _id: 'cust-1', waId: '97699112233' };
+const connection = {
+  _id: 'conn-1',
+  phoneNumberId: '111',
+  accessToken: 'token',
+  healthStatus: 'healthy',
+};
+
+const models = {
+  WhatsappCustomers: {
+    findOne: jest.fn(),
+    findContact: jest.fn(),
+  },
+  WhatsappIntegrations: {
+    getByIntegrationId: jest.fn(),
+    markHealth: jest.fn(),
+  },
+  ConversationMessages: {
+    findOne: jest.fn(),
+    updateOne: jest.fn(),
+    createMessage: jest.fn(),
+  },
+} as unknown as IModels;
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  jest.mocked(models.WhatsappCustomers.findOne).mockResolvedValue(customer as never);
+  jest
+    .mocked(models.WhatsappCustomers.findContact)
+    .mockResolvedValue(customer as never);
+  jest
+    .mocked(models.WhatsappIntegrations.getByIntegrationId)
+    .mockResolvedValue(connection as never);
+});
+
+describe('sendWhatsappReply', () => {
+  const payload = {
+    integrationId: 'inbox-1',
+    conversationId: 'whatsapp-cust-1',
+    content: '<p>Hello <strong>you</strong></p>',
+    attachments: [
+      { url: 'key-1', name: 'spec.pdf', type: 'application/pdf' },
+    ],
+  };
+
+  it('sends text then attachments to the contact and returns their wamids', async () => {
+    jest
+      .mocked(sendWhatsappMessage)
+      .mockResolvedValueOnce('wamid.1')
+      .mockResolvedValueOnce('wamid.2');
+
+    const result = await sendWhatsappReply({
+      models,
+      subdomain: 'tenant',
+      payload,
+    });
+
+    expect(models.WhatsappCustomers.findOne).toHaveBeenCalledWith({
+      _id: 'cust-1',
+      integrationId: 'inbox-1',
+    });
+    expect(sendWhatsappMessage).toHaveBeenNthCalledWith(
+      1,
+      'token',
+      '111',
+      { to: '97699112233' },
+      { type: 'text', text: { body: 'Hello *you*', preview_url: true } },
+    );
+    expect(sendWhatsappMessage).toHaveBeenNthCalledWith(
+      2,
+      'token',
+      '111',
+      { to: '97699112233' },
+      {
+        type: 'document',
+        media: {
+          link: 'https://files.example.com/key-1',
+          filename: 'spec.pdf',
+        },
+      },
+    );
+    expect(result.data.extraData.whatsapp.messageIds).toEqual([
+      'wamid.1',
+      'wamid.2',
+    ]);
+  });
+
+  it('explains the 24-hour window and marks revoked access unhealthy', async () => {
+    jest
+      .mocked(sendWhatsappMessage)
+      .mockRejectedValueOnce(new WhatsappGraphError('Re-engagement', 131047));
+
+    await expect(
+      sendWhatsappReply({ models, subdomain: 'tenant', payload }),
+    ).rejects.toThrow('24 hours');
+    expect(models.WhatsappIntegrations.markHealth).not.toHaveBeenCalled();
+
+    jest
+      .mocked(sendWhatsappMessage)
+      .mockRejectedValueOnce(new WhatsappGraphError('Expired', 190));
+
+    await expect(
+      sendWhatsappReply({ models, subdomain: 'tenant', payload }),
+    ).rejects.toThrow('connect the number again');
+    expect(models.WhatsappIntegrations.markHealth).toHaveBeenCalledWith(
+      'conn-1',
+      expect.stringContaining('connect the number again'),
+    );
+  });
+
+  it('rejects an empty reply', () => {
+    expect(buildWhatsappReplyParts('tenant', '<p></p>', [])).toEqual([]);
+    expect(describeWhatsappSendError(new Error('plain'))).toBe('plain');
+  });
+});
+
+describe('receiveWhatsappStatus', () => {
+  const message = {
+    _id: 'msg-1',
+    conversationId: 'whatsapp-cust-1',
+    userId: 'agent-1',
+    deliveryStatus: 'sent',
+  };
+
+  it('moves delivery status forward and publishes the update', async () => {
+    jest
+      .mocked(models.ConversationMessages.findOne)
+      .mockReturnValue({ lean: jest.fn().mockResolvedValue(message) } as never);
+    jest
+      .mocked(models.ConversationMessages.updateOne)
+      .mockResolvedValue({ modifiedCount: 1 } as never);
+
+    await receiveWhatsappStatus({
+      models,
+      subdomain: 'tenant',
+      integrationId: 'inbox-1',
+      status: { id: 'wamid.1', status: 'read', recipient_id: '97699112233' },
+    });
+
+    expect(models.ConversationMessages.updateOne).toHaveBeenCalledWith(
+      { _id: 'msg-1', deliveryStatus: { $in: [null, 'sent', 'delivered'] } },
+      { $set: { deliveryStatus: 'read' } },
+    );
+    expect(graphqlPubsub.publish).toHaveBeenCalledWith(
+      'conversationMessageUpdated:tenant:whatsapp-cust-1',
+      {
+        conversationMessageUpdated: {
+          ...message,
+          deliveryStatus: 'read',
+          conversationId: 'whatsapp-cust-1',
+        },
+      },
+    );
+  });
+
+  it('adds one internal note when WhatsApp reports a failed delivery', async () => {
+    jest
+      .mocked(models.ConversationMessages.findOne)
+      .mockReturnValue({ lean: jest.fn().mockResolvedValue(message) } as never);
+    jest
+      .mocked(models.ConversationMessages.updateOne)
+      .mockResolvedValueOnce({ modifiedCount: 1 } as never)
+      .mockResolvedValueOnce({ modifiedCount: 0 } as never);
+    jest
+      .mocked(models.ConversationMessages.createMessage)
+      .mockResolvedValue({ _id: 'note-1' } as never);
+
+    const failed = {
+      id: 'wamid.1',
+      status: 'failed',
+      recipient_id: '97699112233',
+      errors: [{ code: 131047, title: 'Re-engagement message' }],
+    };
+
+    await receiveWhatsappStatus({
+      models,
+      subdomain: 'tenant',
+      integrationId: 'inbox-1',
+      status: failed,
+    });
+    await receiveWhatsappStatus({
+      models,
+      subdomain: 'tenant',
+      integrationId: 'inbox-1',
+      status: failed,
+    });
+
+    expect(models.ConversationMessages.createMessage).toHaveBeenCalledTimes(1);
+    expect(models.ConversationMessages.createMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'whatsapp-cust-1',
+        internal: true,
+        userId: 'agent-1',
+        content: expect.stringContaining('24 hours'),
+      }),
+    );
+    expect(pConversationClientMessageInserted).toHaveBeenCalledWith('tenant', {
+      _id: 'note-1',
+    });
+  });
+});
