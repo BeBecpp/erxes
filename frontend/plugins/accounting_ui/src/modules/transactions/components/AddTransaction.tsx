@@ -3,83 +3,19 @@ import { AccountingHotkeyScope } from '@/types/AccountingHotkeyScope';
 import { SelectAccount } from '@/settings/account/components/SelectAccount';
 import { IAccount, JournalEnum } from '@/settings/account/types/Account';
 import {
-  IconBook,
-  IconBuildingBank,
-  IconBuildingFactory2,
-  IconCalculator,
-  IconPackage,
-} from '@tabler/icons-react';
-import type { Icon } from '@tabler/icons-react';
-import {
   DropdownMenu,
   usePreviousHotkeyScope,
   useScopedHotkeys,
 } from 'erxes-ui';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { TrJournalEnum } from '../types/constants';
+import { TR_JOURNAL_GROUPS, TrJournalEnum } from '../types/constants';
 import { getSingleJournalByAccount } from '../transaction-form/components/utils';
 
 export type AddTransactionHandler = (
   journal?: TrJournalEnum,
   account?: IAccount,
 ) => void;
-
-type AddTransactionGroup = {
-  label: string;
-  icon: Icon;
-  items: { journal: TrJournalEnum; label: string; hideInForm?: boolean }[];
-};
-
-const ADD_TRANSACTION_GROUPS: AddTransactionGroup[] = [
-  {
-    label: 'general',
-    icon: IconBook,
-    items: [{ journal: TrJournalEnum.MAIN, label: 'general-journal' }],
-  },
-  {
-    label: 'cash-and-bank',
-    icon: IconBuildingBank,
-    items: [
-      { journal: TrJournalEnum.CASH, label: 'cash-label' },
-      { journal: TrJournalEnum.BANK, label: 'bank' },
-    ],
-  },
-  {
-    label: 'calculation',
-    icon: IconCalculator,
-    items: [
-      { journal: TrJournalEnum.RECEIVABLE, label: 'accounts-receivable' },
-      { journal: TrJournalEnum.PAYABLE, label: 'accounts-payable' },
-    ],
-  },
-  {
-    label: 'inventory-label',
-    icon: IconPackage,
-    items: [
-      { journal: TrJournalEnum.INV_INCOME, label: 'receipt' },
-      { journal: TrJournalEnum.INV_OUT, label: 'supplies-issue' },
-      { journal: TrJournalEnum.INV_JUSTIFY, label: 'cost-adjustment' },
-      {
-        journal: TrJournalEnum.INV_MOVE,
-        label: 'internal-transfer',
-        hideInForm: true,
-      },
-      { journal: TrJournalEnum.INV_SALE, label: 'sale' },
-      { journal: TrJournalEnum.INV_SALE_RETURN, label: 'sales-return' },
-    ],
-  },
-  {
-    label: 'fixed-asset',
-    icon: IconBuildingFactory2,
-    items: [
-      { journal: TrJournalEnum.FXA_INCOME, label: 'receipt' },
-      { journal: TrJournalEnum.FXA_OUT, label: 'disposal' },
-      { journal: TrJournalEnum.FXA_MOVE, label: 'movement' },
-      { journal: TrJournalEnum.FXA_SALE, label: 'sale' },
-    ],
-  },
-];
 
 export const AddTransaction = ({
   inForm,
@@ -151,14 +87,14 @@ export const AddTransaction = ({
             <DropdownMenu.Separator />
           </>
         )}
-        {ADD_TRANSACTION_GROUPS.map((group) => (
+        {TR_JOURNAL_GROUPS.map((group) => (
           <DropdownMenu.Group key={group.label} className="pb-1">
             <DropdownMenu.Label className="flex items-center gap-1.5 text-muted-foreground">
               <group.icon className="size-3.5" />
               {t(group.label)}
             </DropdownMenu.Label>
             {group.items
-              .filter((item) => !(inForm && item.hideInForm))
+              .filter((item) => !item.hideInAdd && !(inForm && item.hideInForm))
               .map((item) => (
                 <AddTransactionItem
                   key={item.journal}

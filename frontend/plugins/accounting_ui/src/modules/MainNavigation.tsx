@@ -6,11 +6,14 @@ import {
   IconRefreshAlert,
 } from '@tabler/icons-react';
 
-import { NavigationMenuLinkItem } from 'erxes-ui';
+import { NavigationMenuLinkItem, sidebarPanelOpenState } from 'erxes-ui';
+import { useSetAtom } from 'jotai';
 import { useTranslation } from 'react-i18next';
 
 export const MainNavigation = () => {
   const { t } = useTranslation('accounting');
+  const setReceiptsPanelOpen = useSetAtom(sidebarPanelOpenState);
+
   return (
     <>
       <NavigationMenuLinkItem
@@ -18,6 +21,7 @@ export const MainNavigation = () => {
         icon={IconListDetails}
         path="main"
         pathPrefix="accounting"
+        onClick={() => setReceiptsPanelOpen(true)}
       />
       <NavigationMenuLinkItem
         name={t('journal-entries')}

@@ -8,7 +8,6 @@ import { AdjustmentNavigation } from '@/AdjustmentNavigation';
 import { InventoriesNavigation } from '@/InventoriesNavigation';
 import { JournalNavigation } from '@/JournalNavigation';
 import { MainNavigation } from '@/MainNavigation';
-import { ReceiptsNavigation } from '@/ReceiptsNavigation';
 import { CheckSyncNavigation } from '@/check-synced/components/CheckSyncNavigation';
 import { FixedAssetsNavigation } from '@/fixedAssets/FixedAssetsNavigation';
 
@@ -25,7 +24,6 @@ export const AccountingSidebar = () => (
         </Sidebar.Menu>
       </Sidebar.GroupContent>
     </Sidebar.Group>
-    <ReceiptsNavigation />
     <JournalNavigation />
     <CheckSyncNavigation />
   </>
