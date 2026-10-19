@@ -104,7 +104,9 @@
   happen there — no Facebook Page or personal account list), then a setup step
   shows the verified number and collects the inbox name, brand and, only for an
   unregistered number, an optional 6-digit PIN. Creation goes through the
-  shared `useIntegrationAdd`. Row actions edit name/brand (number shown
+  shared `useIntegrationAdd` and shows its own success toast. Closing the
+  sheet or choosing another number before finishing discards the unused
+  connection with `frontlineWhatsappDiscardConnection`. Row actions edit name/brand (number shown
   read-only) and repair the connection. Integrations config holds the Meta app
   settings (hidden on SaaS) with the copyable webhook URL. WhatsApp
   conversations render with the native inbox messages and composer.
@@ -1098,7 +1100,12 @@ to, bouncedRecipients, retryable, canRetry }` for its delivery state;
   the signup finish and connection reads share
   `frontlineWhatsappConnectionFields`, both spread by name. `WhatsappConfig`,
   `WhatsappConnection` and `WhatsappEmbeddedSignupConfig` derive from the
-  generated types; row actions take `CellContext<IIntegration>`.
+  generated types; row actions take `CellContext<IIntegration>`. Repair
+  refetches `Integrations` and `frontlineWhatsappConnection`; the edit form
+  shows a retryable error when the integration detail fails to load.
+  `useWhatsappTranslation` returns a stable `t`, so the signup hook's message
+  listener is not re-bound on every render. A per-call `onCompleted` replaces
+  the hook's, so a WhatsApp create must show its own toast.
 - Telegram suppresses automatic response-template suggestions while typing;
   the explicit template selector remains available. Preserve other providers'
   composer behavior, Facebook partial-delivery recovery, Instagram error
@@ -2674,9 +2681,9 @@ null }`, fall back to the route pipeline and skip without one; never pass
 
 ### `2026-10-19` — WhatsApp through Meta Embedded Signup
 
-- **Summary:** Adds the WhatsApp integration with an Embedded Signup–only Add sheet, edit/repair row actions, Meta app config section and native inbox rendering; its documents are typed from codegen.
+- **Summary:** Adds the WhatsApp integration with an Embedded Signup–only Add sheet, edit/repair row actions, Meta app config section and native inbox rendering; its documents are typed from codegen. Unused signup connections are discarded on close, creation shows a success toast, repair refreshes the number details and the edit form has an error state.
 - **Affected areas:** `src/modules/integrations/whatsapp`, integration registries/icons/chips, detail and config pages, row actions, native conversation kinds.
-- **Contracts changed:** Consumes the new `frontline_api` WhatsApp GraphQL operations and kind `whatsapp-messenger`.
+- **Contracts changed:** Consumes the new `frontline_api` WhatsApp GraphQL operations (including `whatsappDiscardConnection`) and kind `whatsapp-messenger`; `useIntegrationDetail` also returns `error` and `refetch`.
 
 ### `2026-10-16` — Knowledge scope tree and ticket media
 

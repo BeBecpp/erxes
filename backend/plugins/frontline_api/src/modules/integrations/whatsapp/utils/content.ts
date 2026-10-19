@@ -1,5 +1,15 @@
-import { escapeHtml } from '@/integrations/mail/utils/html';
 import { WhatsappWebhookMessage } from '@/integrations/whatsapp/utils/payload';
+
+const HTML_ESCAPES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+const escapeHtml = (text: string) =>
+  text.replace(/[&<>"']/g, (char) => HTML_ESCAPES[char]);
 
 export type WhatsappMediaKind =
   | 'image'
@@ -159,10 +169,7 @@ export const splitWhatsappText = (text: string, limit: number): string[] => {
 
   while (rest.length > limit) {
     const window = rest.slice(0, limit);
-    const breakAt = Math.max(
-      window.lastIndexOf('\n'),
-      window.lastIndexOf(' '),
-    );
+    const breakAt = Math.max(window.lastIndexOf('\n'), window.lastIndexOf(' '));
     const cut = breakAt > limit / 2 ? breakAt : limit;
 
     parts.push(rest.slice(0, cut).trim());

@@ -24,7 +24,9 @@ import {
   unsubscribeWabaWebhooks,
 } from '@/integrations/whatsapp/graphApi';
 
-type ServiceResult = { status: 'success' } | { status: 'error'; errorMessage: string };
+type ServiceResult =
+  | { status: 'success' }
+  | { status: 'error'; errorMessage: string };
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
@@ -164,12 +166,14 @@ export const whatsappCreateIntegration = async ({
         phoneStatus,
         healthStatus: 'healthy',
       },
-      $unset: { error: '' },
+      $unset: { error: '', pendingSince: '' },
     },
   );
 
   if (!attached.modifiedCount) {
-    throw new Error('This WhatsApp number was connected to another inbox meanwhile');
+    throw new Error(
+      'This WhatsApp number was connected to another inbox meanwhile',
+    );
   }
 
   return { status: 'success' };
@@ -259,18 +263,25 @@ export const whatsappStatus = async ({
   subdomain: string;
   data: { integrationId: string };
 }) => {
-  const models = await generateModels(subdomain);
-  const connection = await models.WhatsappIntegrations.findOne({
-    erxesApiId: data.integrationId,
-  }).lean();
+  try {
+    const models = await generateModels(subdomain);
+    const connection = await models.WhatsappIntegrations.findOne({
+      erxesApiId: data.integrationId,
+    }).lean();
 
-  return {
-    status: 'success',
-    data: {
-      status: connection?.healthStatus || 'healthy',
-      error: connection?.error,
-    },
-  };
+    return {
+      status: 'success',
+      data: {
+        status: connection?.healthStatus || 'healthy',
+        error: connection?.error,
+      },
+    };
+  } catch (error) {
+    // The status column must not break the integrations list.
+    debugWhatsapp(`WhatsApp status failed: ${errorMessage(error)}`);
+
+    return { status: 'success', data: { status: 'healthy' } };
+  }
 };
 
 const replyEnvelopeSchema = z
@@ -313,7 +324,9 @@ export const handleWhatsappIntegration = async ({
       !envelope.success ||
       envelope.data.integrationId !== data.integrationId
     ) {
-      throw new Error('WhatsApp reply integration does not match its destination');
+      throw new Error(
+        'WhatsApp reply integration does not match its destination',
+      );
     }
 
     const models = await generateModels(subdomain);

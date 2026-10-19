@@ -67,4 +67,21 @@ export const whatsappMutations = {
       input,
     });
   },
+
+  async whatsappDiscardConnection(
+    _root: undefined,
+    { _id }: { _id: string },
+    { models, user, checkPermission }: IContext,
+  ): Promise<boolean> {
+    await checkPermission('integrationsAdd');
+
+    // Only the user's own connection that never reached an inbox.
+    const removed = await models.WhatsappIntegrations.deleteOne({
+      _id,
+      connectedBy: user._id,
+      erxesApiId: { $exists: false },
+    });
+
+    return removed.deletedCount > 0;
+  },
 };

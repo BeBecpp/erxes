@@ -39,4 +39,6 @@ export const mutations = `
   whatsappUpdateConfig(appId: String!, appSecret: String, configId: String!, verifyToken: String): WhatsappConfig!
   "Exchanges the Embedded Signup code and saves the number as a pending connection."
   whatsappEmbeddedSignupFinish(code: String!, wabaId: String!, phoneNumberId: String!, businessId: String): WhatsappConnection!
+  "Deletes the user's signup connection that was never attached to an inbox."
+  whatsappDiscardConnection(_id: String!): Boolean!
 `;

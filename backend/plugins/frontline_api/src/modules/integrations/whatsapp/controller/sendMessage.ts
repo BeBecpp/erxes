@@ -1,12 +1,14 @@
 import { z } from 'zod';
 import { IModels } from '~/connectionResolvers';
-import { generateAttachmentUrl } from '@/integrations/facebook/commonUtils';
 import { IWhatsappCustomerDocument } from '@/integrations/whatsapp/@types/customers';
 import {
   WHATSAPP_ERROR_CODES,
   WHATSAPP_TEXT_LIMIT,
 } from '@/integrations/whatsapp/constants';
 import { getWhatsappCustomerIdFromConversation } from '@/integrations/whatsapp/controller/store';
+import { debugWhatsapp } from '@/integrations/whatsapp/debuggers';
+import { generateWhatsappAttachmentUrl } from '@/integrations/whatsapp/utils/attachments';
+import { markWhatsappReplyInFlight } from '@/integrations/whatsapp/utils/inFlight';
 import {
   WhatsappGraphError,
   WhatsappOutgoingContent,
@@ -74,7 +76,7 @@ export const buildWhatsappReplyParts = (
       return {
         type,
         media: {
-          link: generateAttachmentUrl(subdomain, attachment.url),
+          link: generateWhatsappAttachmentUrl(subdomain, attachment.url),
           ...(type === 'document' && attachment.name
             ? { filename: attachment.name }
             : {}),
@@ -89,7 +91,9 @@ export const buildWhatsappReplyParts = (
 /** Turns Meta errors into a message an agent can act on. */
 export const describeWhatsappSendError = (error: unknown): string => {
   if (!(error instanceof WhatsappGraphError)) {
-    return error instanceof Error ? error.message : 'Could not send to WhatsApp';
+    return error instanceof Error
+      ? error.message
+      : 'Could not send to WhatsApp';
   }
 
   switch (error.code) {
@@ -137,8 +141,9 @@ export const sendWhatsappReply = async ({
     throw new Error('WhatsApp contact not found for this conversation');
   }
 
-  const connection =
-    await models.WhatsappIntegrations.getByIntegrationId(integrationId);
+  const connection = await models.WhatsappIntegrations.getByIntegrationId(
+    integrationId,
+  );
   const parts = buildWhatsappReplyParts(subdomain, content, attachments);
 
   if (!parts.length) {
@@ -149,14 +154,14 @@ export const sendWhatsappReply = async ({
   const messageIds: string[] = [];
 
   for (const part of parts) {
+    let wamid: string;
+
     try {
-      messageIds.push(
-        await sendWhatsappMessage(
-          connection.accessToken,
-          connection.phoneNumberId,
-          recipient,
-          part,
-        ),
+      wamid = await sendWhatsappMessage(
+        connection.accessToken,
+        connection.phoneNumberId,
+        recipient,
+        part,
       );
     } catch (error) {
       const message = describeWhatsappSendError(error);
@@ -171,6 +176,17 @@ export const sendWhatsappReply = async ({
           : message,
       );
     }
+
+    messageIds.push(wamid);
+
+    // The part is already delivered; a missing marker only loses early statuses.
+    await markWhatsappReplyInFlight(subdomain, wamid).catch((error) =>
+      debugWhatsapp(
+        `WhatsApp in-flight marker failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      ),
+    );
   }
 
   if (connection.healthStatus !== 'healthy') {

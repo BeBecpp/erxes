@@ -11,7 +11,9 @@ import {
   handleWhatsappIntegration,
   whatsappCreateIntegration,
   whatsappRemoveIntegration,
+  whatsappStatus,
 } from '../messageBroker';
+import { whatsappMutations } from '../graphql/resolvers/mutations';
 import { assertWhatsappTokenGrants } from '../signup';
 
 jest.mock('~/connectionResolvers', () => ({ generateModels: jest.fn() }));
@@ -19,7 +21,9 @@ jest.mock('../config', () => ({
   ensureWhatsappVerifyToken: jest.fn().mockResolvedValue('verify-token'),
   getWhatsappWebhookUrl: jest
     .fn()
-    .mockReturnValue('https://tenant.example.com/pl:frontline/whatsapp/webhook'),
+    .mockReturnValue(
+      'https://tenant.example.com/pl:frontline/whatsapp/webhook',
+    ),
 }));
 jest.mock('../graphApi', () => {
   const actual = jest.requireActual('../graphApi');
@@ -73,13 +77,11 @@ beforeEach(() => {
   jest
     .mocked(models.WhatsappIntegrations.updateOne)
     .mockResolvedValue({ modifiedCount: 1 } as never);
-  jest
-    .mocked(getPhoneNumber)
-    .mockResolvedValue({
-      id: '111',
-      display_phone_number: '+976 9911 2233',
-      status: 'CONNECTED',
-    });
+  jest.mocked(getPhoneNumber).mockResolvedValue({
+    id: '111',
+    display_phone_number: '+976 9911 2233',
+    status: 'CONNECTED',
+  });
 });
 
 describe('whatsappCreateIntegration', () => {
@@ -108,7 +110,7 @@ describe('whatsappCreateIntegration', () => {
           phoneStatus: 'CONNECTED',
           healthStatus: 'healthy',
         },
-        $unset: { error: '' },
+        $unset: { error: '', pendingSince: '' },
       },
     );
   });
@@ -241,8 +243,62 @@ describe('assertWhatsappTokenGrants', () => {
         'waba-1',
       ),
     ).toThrow('whatsapp_business_messaging');
-    expect(() =>
-      assertWhatsappTokenGrants(app, validToken, 'waba-2'),
-    ).toThrow('did not share');
+    expect(() => assertWhatsappTokenGrants(app, validToken, 'waba-2')).toThrow(
+      'did not share',
+    );
+  });
+});
+
+describe('whatsappStatus', () => {
+  it('reports the connection health and never throws', async () => {
+    jest.mocked(models.WhatsappIntegrations.findOne).mockReturnValue({
+      lean: jest
+        .fn()
+        .mockResolvedValue({ healthStatus: 'unhealthy', error: 'expired' }),
+    } as never);
+
+    await expect(
+      whatsappStatus({
+        subdomain: 'tenant',
+        data: { integrationId: 'inbox-1' },
+      }),
+    ).resolves.toEqual({
+      status: 'success',
+      data: { status: 'unhealthy', error: 'expired' },
+    });
+
+    jest.mocked(models.WhatsappIntegrations.findOne).mockReturnValue({
+      lean: jest.fn().mockRejectedValue(new Error('db down')),
+    } as never);
+
+    await expect(
+      whatsappStatus({
+        subdomain: 'tenant',
+        data: { integrationId: 'inbox-1' },
+      }),
+    ).resolves.toEqual({ status: 'success', data: { status: 'healthy' } });
+  });
+});
+
+describe('whatsappDiscardConnection', () => {
+  it("deletes only the user's own connection that is not attached", async () => {
+    const checkPermission = jest.fn();
+    jest
+      .mocked(models.WhatsappIntegrations.deleteOne)
+      .mockResolvedValue({ deletedCount: 1 } as never);
+
+    await expect(
+      whatsappMutations.whatsappDiscardConnection(
+        undefined,
+        { _id: 'conn-1' },
+        { models, user: { _id: 'user-1' }, checkPermission } as never,
+      ),
+    ).resolves.toBe(true);
+    expect(checkPermission).toHaveBeenCalledWith('integrationsAdd');
+    expect(models.WhatsappIntegrations.deleteOne).toHaveBeenCalledWith({
+      _id: 'conn-1',
+      connectedBy: 'user-1',
+      erxesApiId: { $exists: false },
+    });
   });
 });

@@ -8,6 +8,10 @@ import {
   sendWhatsappReply,
 } from '../controller/sendMessage';
 import { WhatsappGraphError, sendWhatsappMessage } from '../graphApi';
+import {
+  isWhatsappReplyInFlight,
+  markWhatsappReplyInFlight,
+} from '../utils/inFlight';
 
 jest.mock('~/connectionResolvers', () => ({}));
 jest.mock('erxes-api-shared/utils', () => ({
@@ -17,9 +21,17 @@ jest.mock('@/inbox/graphql/resolvers/mutations/widget', () => ({
   pConversationClientMessageInserted: jest.fn(),
 }));
 jest.mock('@/inbox/receiveMessage', () => ({ receiveInboxMessage: jest.fn() }));
-jest.mock('@/integrations/facebook/commonUtils', () => ({
-  generateAttachmentUrl: (_subdomain: string, url: string) =>
+jest.mock('../utils/attachments', () => ({
+  generateWhatsappAttachmentUrl: (_subdomain: string, url: string) =>
     `https://files.example.com/${url}`,
+}));
+jest.mock('../utils/inFlight', () => ({
+  markWhatsappReplyInFlight: jest.fn().mockResolvedValue(undefined),
+  isWhatsappReplyInFlight: jest.fn().mockResolvedValue(false),
+}));
+jest.mock('../constants', () => ({
+  ...jest.requireActual('../constants'),
+  WHATSAPP_STATUS_RETRY_DELAYS_MS: [0, 0],
 }));
 jest.mock('../graphApi', () => {
   const actual = jest.requireActual('../graphApi');
@@ -56,7 +68,9 @@ const models = {
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.mocked(models.WhatsappCustomers.findOne).mockResolvedValue(customer as never);
+  jest
+    .mocked(models.WhatsappCustomers.findOne)
+    .mockResolvedValue(customer as never);
   jest
     .mocked(models.WhatsappCustomers.findContact)
     .mockResolvedValue(customer as never);
@@ -70,9 +84,7 @@ describe('sendWhatsappReply', () => {
     integrationId: 'inbox-1',
     conversationId: 'whatsapp-cust-1',
     content: '<p>Hello <strong>you</strong></p>',
-    attachments: [
-      { url: 'key-1', name: 'spec.pdf', type: 'application/pdf' },
-    ],
+    attachments: [{ url: 'key-1', name: 'spec.pdf', type: 'application/pdf' }],
   };
 
   it('sends text then attachments to the contact and returns their wamids', async () => {
@@ -115,6 +127,31 @@ describe('sendWhatsappReply', () => {
       'wamid.1',
       'wamid.2',
     ]);
+    expect(markWhatsappReplyInFlight).toHaveBeenNthCalledWith(
+      1,
+      'tenant',
+      'wamid.1',
+    );
+    expect(markWhatsappReplyInFlight).toHaveBeenNthCalledWith(
+      2,
+      'tenant',
+      'wamid.2',
+    );
+  });
+
+  it('still returns the sent parts when the in-flight marker fails', async () => {
+    jest.mocked(sendWhatsappMessage).mockResolvedValueOnce('wamid.1');
+    jest
+      .mocked(markWhatsappReplyInFlight)
+      .mockRejectedValueOnce(new Error('redis down'));
+
+    const result = await sendWhatsappReply({
+      models,
+      subdomain: 'tenant',
+      payload: { ...payload, attachments: [] },
+    });
+
+    expect(result.data.extraData.whatsapp.messageIds).toEqual(['wamid.1']);
   });
 
   it('explains the 24-hour window and marks revoked access unhealthy', async () => {
@@ -229,5 +266,70 @@ describe('receiveWhatsappStatus', () => {
     expect(pConversationClientMessageInserted).toHaveBeenCalledWith('tenant', {
       _id: 'note-1',
     });
+  });
+
+  const sentStatus = {
+    id: 'wamid.1',
+    status: 'delivered',
+    recipient_id: '97699112233',
+  };
+  const findReturning = (...results: unknown[]) => {
+    const mock = jest.mocked(models.ConversationMessages.findOne);
+
+    for (const result of results) {
+      mock.mockReturnValueOnce({
+        lean: jest.fn().mockResolvedValue(result),
+      } as never);
+    }
+  };
+
+  it('ignores a status for a message erxes never sent', async () => {
+    findReturning(null);
+
+    await receiveWhatsappStatus({
+      models,
+      subdomain: 'tenant',
+      integrationId: 'inbox-1',
+      status: sentStatus,
+    });
+
+    expect(isWhatsappReplyInFlight).toHaveBeenCalledWith('tenant', 'wamid.1');
+    expect(models.ConversationMessages.findOne).toHaveBeenCalledTimes(1);
+    expect(models.ConversationMessages.updateOne).not.toHaveBeenCalled();
+  });
+
+  it('applies a status that arrives before its reply is stored', async () => {
+    jest.mocked(isWhatsappReplyInFlight).mockResolvedValueOnce(true);
+    findReturning(null, message);
+    jest
+      .mocked(models.ConversationMessages.updateOne)
+      .mockResolvedValue({ modifiedCount: 1 } as never);
+
+    await receiveWhatsappStatus({
+      models,
+      subdomain: 'tenant',
+      integrationId: 'inbox-1',
+      status: sentStatus,
+    });
+
+    expect(models.ConversationMessages.updateOne).toHaveBeenCalledWith(
+      { _id: 'msg-1', deliveryStatus: { $in: [null, 'sent'] } },
+      { $set: { deliveryStatus: 'delivered' } },
+    );
+  });
+
+  it('fails so Meta redelivers when an in-flight reply is still not stored', async () => {
+    jest.mocked(isWhatsappReplyInFlight).mockResolvedValueOnce(true);
+    findReturning(null, null, null);
+
+    await expect(
+      receiveWhatsappStatus({
+        models,
+        subdomain: 'tenant',
+        integrationId: 'inbox-1',
+        status: sentStatus,
+      }),
+    ).rejects.toThrow('not stored yet');
+    expect(models.ConversationMessages.updateOne).not.toHaveBeenCalled();
   });
 });

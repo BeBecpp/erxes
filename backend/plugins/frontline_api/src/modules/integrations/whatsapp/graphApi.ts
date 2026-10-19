@@ -349,6 +349,8 @@ export const downloadWhatsappMedia = async (
 
   const response = await fetch(media.url, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    // A redirect would leave the allowlisted host with the bearer token.
+    redirect: 'error',
     signal: AbortSignal.timeout(WHATSAPP_DOWNLOAD_TIMEOUT_MS),
   }).catch(() => {
     throw new WhatsappGraphError('Could not download the WhatsApp media.');

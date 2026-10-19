@@ -83,7 +83,7 @@ const WhatsappIntegrationEditForm = ({
   onDone: () => void;
 }) => {
   const { t } = useWhatsappTranslation();
-  const { loading, integrationDetail } = useIntegrationDetail({
+  const { loading, error, refetch, integrationDetail } = useIntegrationDetail({
     integrationId: id,
   });
   const { editIntegration, loading: saving } = useIntegrationEdit();
@@ -124,6 +124,19 @@ const WhatsappIntegrationEditForm = ({
   };
 
   if (loading) return <Spinner className="p-20" />;
+
+  if (error || !integrationDetail) {
+    return (
+      <div className="flex flex-col items-start gap-2 p-6 text-sm">
+        <p role="alert" className="text-destructive">
+          {t('detailLoadFailed')} {error?.message}
+        </p>
+        <Button type="button" variant="outline" onClick={() => void refetch()}>
+          {t('retry')}
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <Form {...form}>
@@ -220,7 +233,7 @@ export const WhatsappIntegrationRepair = ({
 }) => {
   const { t } = useWhatsappTranslation();
   const [repair, { loading }] = useMutation(WHATSAPP_REPAIR, {
-    refetchQueries: ['Integrations'],
+    refetchQueries: ['Integrations', 'frontlineWhatsappConnection'],
   });
 
   const handleRepair = () => {

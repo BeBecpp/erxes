@@ -75,6 +75,9 @@
   `deliveryStatus` forward, and a failed delivery adds one internal note.
   Replies convert composer HTML to WhatsApp text, split at 4096 characters and
   send attachments as media links. Repair re-registers and re-subscribes.
+  A status that arrives before its reply is stored waits briefly, then fails
+  the webhook so Meta redelivers it. An unattached signup connection is
+  discarded when the setup sheet closes and otherwise expires after a day.
 
 - Telegram bot setup and webhook status; private chats, groups, channels and
   forum topics; text, files, media, polls, edits, observed reactions and visible
@@ -649,7 +652,11 @@ The root router mounts its authenticated webhook at `/telegram`.
   `whatsappUpdateConfig` (`integrationsEdit`; the secret is write-only and
   SaaS rejects writes), `whatsappEmbeddedSignupConfig` and
   `whatsappEmbeddedSignupFinish` (`integrationsAdd`), and
-  `whatsappConnection(integrationId)` (`showIntegrations`). Integration
+  `whatsappConnection(integrationId)` (`showIntegrations`), and
+  `whatsappDiscardConnection(_id)` (`integrationsAdd`; deletes only the
+  caller's own unattached connection). The verify token is compared in
+  constant time, and `whatsappConfig` returns an empty `verifyToken` on SaaS,
+  where one token is shared by every workspace. Integration
   create data is `{ connectionId, pin? }`; inbox messages carry
   `extraData.whatsapp` (`messageId`/`type` inbound, `messageIds` outbound).
 
@@ -1343,7 +1350,11 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
   `whatsapp_configs` (`WHATSAPP_APP_ID`, `WHATSAPP_APP_SECRET`,
   `WHATSAPP_EMBEDDED_SIGNUP_CONFIG_ID`, `WHATSAPP_VERIFY_TOKEN`; SaaS reads
   only the environment). Inbox ids are derived: conversation
-  `whatsapp-<customer _id>`, inbound message `whatsapp-<wamid>`.
+  `whatsapp-<customer _id>`, inbound message `whatsapp-<wamid>`, and a new
+  Core customer `whatsapp-<customer _id>`. `pendingSince` is set on a signup
+  connection until it is attached; a TTL index deletes it after 24 hours.
+  Redis key `whatsapp:in-flight:<subdomain>:<wamid>` (15 minutes) marks a
+  reply sent to WhatsApp whose inbox message may not be stored yet.
 - Telegram bot tokens and webhook secrets are server-only. Provider IDs are
   strings; deduplication, poll/reaction updates and reply lookup are scoped by
   tenant, integration and chat, with topic identity included where applicable.
@@ -1394,7 +1405,12 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
   live inbox integration must never be re-attached. Inbound ingestion stays
   idempotent per wamid and never overwrites an existing Core customer's name;
   delivery status only moves forward. Removal unsubscribes a WABA only when no
-  other attached number shares it.
+  other attached number shares it. Core customers are looked up and created
+  under the stable `whatsapp-<customer _id>` so concurrent webhooks converge;
+  a status for an in-flight reply is never acknowledged before it is applied.
+  The webhook resolves `localhost` in development, like Facebook, so realtime
+  topics match the browser. The WhatsApp module imports no helper from
+  another integration.
 - Keep Telegram as an additive dispatcher case. Preserve other providers'
   delivery receipts, notifications, human-handoff state and message storage.
   Only Telegram chats without `customerId` may reply without a Core customer;
@@ -1587,6 +1603,12 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
 
 <!-- Newest first. Keep at most 10 entries. -->
 
+### `2026-10-19` — WhatsApp delivery, customer and signup hardening
+
+- **Summary:** Statuses that beat their reply are retried instead of dropped, Core customers use a stable id, abandoned signup connections are discarded or expire, and the webhook compares its verify token in constant time and resolves `localhost` in development.
+- **Affected areas:** `src/modules/integrations/whatsapp` (statuses, store, send, webhook, signup, message broker, schema).
+- **Contracts changed:** New GraphQL `whatsappDiscardConnection(_id)`; `whatsappConfig.verifyToken` is empty on SaaS; `whatsapp_integrations.pendingSince` with a TTL index.
+
 ### `2026-10-18` — Ticket remembered through action placement
 
 - **Summary:** Create ticket declares what it remembers behind an AI agent (`defaultsWhenAfter`) instead of output `memorize` flags; ticket find object reports `acceptsFollowUp`; conversation media is stored on tickets with a MIME type.
@@ -1604,6 +1626,7 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
 - **Summary:** Debounced Messenger AI turns, media-only messages, media markers and open-ticket facts for the agent, ticket attachments and conversation relations, and topic/category scope for the knowledge base source.
 - **Affected areas:** Facebook automation trigger and context, ticket automation actions, knowledge base AI provider.
 - **Contracts changed:** `createTicket` config gains `attachmentIds`; AI context facts gain `mediaIds` and `openTickets`; knowledge source config accepts `topicIds`, `categoryIds`, `articleIds`.
+
 ### `2026-10-15` — WhatsApp Cloud API through Embedded Signup
 
 - **Summary:** Adds WhatsApp onboarding through Meta Embedded Signup only, signed webhook ingestion into the native inbox, delivery statuses, replies, repair and removal.

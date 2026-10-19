@@ -1,9 +1,13 @@
 import { graphqlPubsub } from 'erxes-api-shared/utils';
 import { IModels } from '~/connectionResolvers';
 import { pConversationClientMessageInserted } from '@/inbox/graphql/resolvers/mutations/widget';
-import { WHATSAPP_ERROR_CODES } from '@/integrations/whatsapp/constants';
+import {
+  WHATSAPP_ERROR_CODES,
+  WHATSAPP_STATUS_RETRY_DELAYS_MS,
+} from '@/integrations/whatsapp/constants';
 import { getWhatsappConversationId } from '@/integrations/whatsapp/controller/store';
 import { whatsappTextToHtml } from '@/integrations/whatsapp/utils/content';
+import { isWhatsappReplyInFlight } from '@/integrations/whatsapp/utils/inFlight';
 import { WhatsappWebhookStatus } from '@/integrations/whatsapp/utils/payload';
 
 type TrackedStatus = 'sent' | 'delivered' | 'read';
@@ -30,9 +34,55 @@ export const describeWhatsappFailure = (status: WhatsappWebhookStatus) => {
   }
 
   const reason =
-    error?.error_data?.details || error?.message || error?.title || 'unknown error';
+    error?.error_data?.details ||
+    error?.message ||
+    error?.title ||
+    'unknown error';
 
-  return `WhatsApp did not deliver this reply: ${reason}${error?.code ? ` (code ${error.code})` : ''}.`;
+  return `WhatsApp did not deliver this reply: ${reason}${
+    error?.code ? ` (code ${error.code})` : ''
+  }.`;
+};
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Loads the reply a status belongs to. A reply erxes just sent may not be
+ * stored yet: wait briefly, then throw so the webhook fails and Meta
+ * redelivers. A status for a message erxes never sent is ignored.
+ */
+const findStatusReply = async ({
+  models,
+  subdomain,
+  conversationId,
+  wamid,
+}: {
+  models: IModels;
+  subdomain: string;
+  conversationId: string;
+  wamid: string;
+}) => {
+  const find = () =>
+    models.ConversationMessages.findOne({
+      conversationId,
+      'extraData.whatsapp.messageIds': wamid,
+    }).lean();
+
+  const message = await find();
+
+  if (message || !(await isWhatsappReplyInFlight(subdomain, wamid))) {
+    return message;
+  }
+
+  for (const delay of WHATSAPP_STATUS_RETRY_DELAYS_MS) {
+    await wait(delay);
+
+    const stored = await find();
+
+    if (stored) return stored;
+  }
+
+  throw new Error(`WhatsApp reply ${wamid} is not stored yet`);
 };
 
 /** Applies a sent/delivered/read/failed status to the agent reply it belongs to. */
@@ -57,10 +107,12 @@ export const receiveWhatsappStatus = async ({
   if (!customer) return;
 
   const conversationId = getWhatsappConversationId(customer._id);
-  const message = await models.ConversationMessages.findOne({
+  const message = await findStatusReply({
+    models,
+    subdomain,
     conversationId,
-    'extraData.whatsapp.messageIds': status.id,
-  }).lean();
+    wamid: status.id,
+  });
 
   if (!message) return;
 

@@ -16,6 +16,8 @@ export interface IWhatsappIntegration {
   healthStatus: WhatsappHealthStatus;
   error?: string;
   connectedBy: string;
+  /** Set until the connection is attached to an inbox; drives the TTL cleanup. */
+  pendingSince?: Date;
   createdAt: Date;
   updatedAt: Date;
 }

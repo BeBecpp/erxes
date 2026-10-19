@@ -10,6 +10,7 @@ import {
 } from '@/integrations/whatsapp/@types/customers';
 import {
   WHATSAPP_CONVERSATION_PREFIX,
+  WHATSAPP_CUSTOMER_PREFIX,
   WHATSAPP_MESSAGE_PREFIX,
 } from '@/integrations/whatsapp/constants';
 
@@ -32,9 +33,13 @@ export const getWhatsappCustomerIdFromConversation = (
 export const getWhatsappInboxMessageId = (wamid: string) =>
   `${WHATSAPP_MESSAGE_PREFIX}${wamid}`;
 
-const findCoreCustomerByPhone = async (
+/** Core customer id derived from the contact, so retries and races converge on one contact. */
+export const getWhatsappCoreCustomerId = (customerId: string) =>
+  `${WHATSAPP_CUSTOMER_PREFIX}${customerId}`;
+
+const findCoreCustomer = async (
   subdomain: string,
-  primaryPhone: string,
+  query: Record<string, string>,
 ): Promise<string | undefined> => {
   const found: unknown = await sendTRPCMessage({
     subdomain,
@@ -42,12 +47,73 @@ const findCoreCustomerByPhone = async (
     method: 'query',
     module: 'customers',
     action: 'findOne',
-    input: { query: { customerPrimaryPhone: primaryPhone } },
+    input: { query },
     defaultValue: null,
   });
   const parsed = entityIdSchema.safeParse(found);
 
   return parsed.success ? parsed.data._id : undefined;
+};
+
+/**
+ * Finds or creates the contact's core customer: its stable id first, then an
+ * existing customer with the same phone, otherwise a new one with the stable
+ * id. A create that loses a race recovers the winner by that id.
+ */
+const resolveCoreCustomer = async (
+  subdomain: string,
+  integrationId: string,
+  customer: IWhatsappCustomerDocument,
+): Promise<string> => {
+  const stableId = getWhatsappCoreCustomerId(customer._id);
+  const primaryPhone = customer.waId ? `+${customer.waId}` : undefined;
+
+  const existing =
+    (await findCoreCustomer(subdomain, { _id: stableId })) ||
+    (primaryPhone
+      ? await findCoreCustomer(subdomain, {
+          customerPrimaryPhone: primaryPhone,
+        })
+      : undefined);
+
+  if (existing) return existing;
+
+  let response: Awaited<ReturnType<typeof receiveInboxMessage>>;
+
+  try {
+    response = await receiveInboxMessage(subdomain, {
+      action: 'get-create-update-customer',
+      payload: JSON.stringify({
+        _id: stableId,
+        integrationId,
+        firstName: customer.name || primaryPhone || 'WhatsApp contact',
+        primaryPhone,
+        isUser: true,
+      }),
+    });
+  } catch (error) {
+    const recovered = await findCoreCustomer(subdomain, { _id: stableId });
+
+    if (recovered) return recovered;
+
+    throw error;
+  }
+
+  if (response.status !== 'success') {
+    const recovered = await findCoreCustomer(subdomain, { _id: stableId });
+
+    if (recovered) return recovered;
+
+    throw new Error(`Customer creation failed: ${response.errorMessage}`);
+  }
+
+  const created = entityIdSchema.safeParse(response.data);
+
+  if (!created.success) {
+    throw new Error('Core did not return a valid customer id');
+  }
+
+  return created.data._id;
 };
 
 /**
@@ -74,34 +140,11 @@ export const getOrCreateWhatsappCustomer = async ({
     return customer as IWhatsappCustomerDocument & { erxesApiId: string };
   }
 
-  const primaryPhone = customer.waId ? `+${customer.waId}` : undefined;
-  let coreCustomerId = primaryPhone
-    ? await findCoreCustomerByPhone(subdomain, primaryPhone)
-    : undefined;
-
-  if (!coreCustomerId) {
-    const response = await receiveInboxMessage(subdomain, {
-      action: 'get-create-update-customer',
-      payload: JSON.stringify({
-        integrationId,
-        firstName: customer.name || primaryPhone || 'WhatsApp contact',
-        primaryPhone,
-        isUser: true,
-      }),
-    });
-
-    if (response.status !== 'success') {
-      throw new Error(`Customer creation failed: ${response.errorMessage}`);
-    }
-
-    const created = entityIdSchema.safeParse(response.data);
-
-    if (!created.success) {
-      throw new Error('Core did not return a valid customer id');
-    }
-
-    coreCustomerId = created.data._id;
-  }
+  const coreCustomerId = await resolveCoreCustomer(
+    subdomain,
+    integrationId,
+    customer,
+  );
 
   // A concurrent webhook may have linked the contact first; keep its link.
   await models.WhatsappCustomers.updateOne(

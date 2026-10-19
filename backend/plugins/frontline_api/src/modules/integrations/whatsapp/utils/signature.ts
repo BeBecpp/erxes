@@ -17,3 +17,16 @@ export const hasValidWhatsappSignature = (
     expected.length === received.length && timingSafeEqual(expected, received)
   );
 };
+
+/** Compares a webhook verify token without leaking its length-prefix timing. */
+export const isWhatsappVerifyToken = (
+  received: unknown,
+  verifyToken: string,
+): boolean => {
+  if (typeof received !== 'string' || !verifyToken) return false;
+
+  const expected = Buffer.from(verifyToken);
+  const actual = Buffer.from(received);
+
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+};

@@ -93,6 +93,12 @@ export const WHATSAPP_CONNECTION = gql(`
   }
 `);
 
+export const WHATSAPP_DISCARD_CONNECTION = gql(`
+  mutation frontlineWhatsappDiscardConnection($_id: String!) {
+    whatsappDiscardConnection(_id: $_id)
+  }
+`);
+
 export const WHATSAPP_REPAIR = gql(`
   mutation frontlineWhatsappRepair($_id: String!, $kind: String!) {
     integrationsRepair(_id: $_id, kind: $kind)

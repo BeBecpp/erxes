@@ -4,7 +4,7 @@ import { IModels } from '~/connectionResolvers';
 import { IWhatsappApp } from '@/integrations/whatsapp/@types/configs';
 import { WHATSAPP_CONFIG_CODES } from '@/integrations/whatsapp/constants';
 
-const isSaas = () => getEnv({ name: 'VERSION' }) === 'saas';
+export const isSaas = () => getEnv({ name: 'VERSION' }) === 'saas';
 
 /** SaaS reads environment only; self-hosted settings override the environment. */
 export const getWhatsappConfig = async (

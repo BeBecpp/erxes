@@ -5,9 +5,13 @@ import type {
 } from 'react';
 import { MockedProvider } from '@apollo/client/testing';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { toast } from 'erxes-ui';
 import { ADD_INTEGRATION } from '@/integrations/graphql/mutations/AddIntegration';
 import { WhatsappIntegrationDetail } from '../WhatsappIntegrationDetail';
-import { WHATSAPP_EMBEDDED_SIGNUP_CONFIG } from '../graphql';
+import {
+  WHATSAPP_DISCARD_CONNECTION,
+  WHATSAPP_EMBEDDED_SIGNUP_CONFIG,
+} from '../graphql';
 
 jest.mock('erxes-ui', () => {
   const { createContext, forwardRef, useContext } =
@@ -130,6 +134,18 @@ jest.mock('../useWhatsappEmbeddedSignup', () => ({
   }),
 }));
 
+const discardMock = (result: jest.Mock) => ({
+  request: {
+    query: WHATSAPP_DISCARD_CONNECTION,
+    variables: { _id: 'conn-1' },
+  },
+  result,
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+});
+
 const configMock = (isConfigured: boolean) => ({
   request: { query: WHATSAPP_EMBEDDED_SIGNUP_CONFIG },
   result: {
@@ -147,6 +163,9 @@ const configMock = (isConfigured: boolean) => ({
 test('connects a number through Meta, then creates the inbox with the PIN', async () => {
   const created = jest.fn(() => ({
     data: { integrationsCreateExternalIntegration: { _id: 'inbox-1' } },
+  }));
+  const discarded = jest.fn(() => ({
+    data: { whatsappDiscardConnection: true },
   }));
 
   render(
@@ -167,6 +186,7 @@ test('connects a number through Meta, then creates the inbox with the PIN', asyn
           },
           result: created,
         },
+        discardMock(discarded),
       ]}
     >
       <WhatsappIntegrationDetail />
@@ -189,11 +209,65 @@ test('connects a number through Meta, then creates the inbox with the PIN', asyn
 
   await waitFor(() => expect(created).toHaveBeenCalled());
   await waitFor(() => expect(screen.queryByText('finish')).toBeNull());
+  expect(toast).toHaveBeenCalledWith({ title: 'created', variant: 'success' });
+  // The connection now belongs to the inbox; closing must not discard it.
+  expect(discarded).not.toHaveBeenCalled();
+});
+
+test('discards the unused connection when the sheet closes before finishing', async () => {
+  const discarded = jest.fn(() => ({
+    data: { whatsappDiscardConnection: true },
+  }));
+  const { unmount } = render(
+    <MockedProvider
+      addTypename={false}
+      mocks={[configMock(true), discardMock(discarded)]}
+    >
+      <WhatsappIntegrationDetail />
+    </MockedProvider>,
+  );
+
+  fireEvent.click(screen.getByText('Open setup'));
+  fireEvent.click(await screen.findByText('continueWithMeta'));
+  await screen.findByText('+976 9911 2233');
+
+  unmount();
+
+  await waitFor(() => expect(discarded).toHaveBeenCalledTimes(1));
+});
+
+test('discards the previous connection when choosing another number', async () => {
+  const discarded = jest.fn(() => ({
+    data: { whatsappDiscardConnection: true },
+  }));
+
+  render(
+    <MockedProvider
+      addTypename={false}
+      mocks={[configMock(true), discardMock(discarded)]}
+    >
+      <WhatsappIntegrationDetail />
+    </MockedProvider>,
+  );
+
+  fireEvent.click(screen.getByText('Open setup'));
+  fireEvent.click(await screen.findByText('continueWithMeta'));
+  fireEvent.click(await screen.findByText('changeNumber'));
+
+  expect(await screen.findByText('continueWithMeta')).toBeTruthy();
+  await waitFor(() => expect(discarded).toHaveBeenCalledTimes(1));
 });
 
 test('validates the brand and PIN before creating', async () => {
+  const discarded = jest.fn(() => ({
+    data: { whatsappDiscardConnection: true },
+  }));
+
   render(
-    <MockedProvider addTypename={false} mocks={[configMock(true)]}>
+    <MockedProvider
+      addTypename={false}
+      mocks={[configMock(true), discardMock(discarded)]}
+    >
       <WhatsappIntegrationDetail />
     </MockedProvider>,
   );

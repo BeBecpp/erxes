@@ -18,11 +18,20 @@ export const WHATSAPP_REQUIRED_SCOPES = [
 /** Inbox conversation and message ids are derived from these prefixes. */
 export const WHATSAPP_CONVERSATION_PREFIX = 'whatsapp-';
 export const WHATSAPP_MESSAGE_PREFIX = 'whatsapp-';
+export const WHATSAPP_CUSTOMER_PREFIX = 'whatsapp-';
 
 export const WHATSAPP_TEXT_LIMIT = 4096;
 export const WHATSAPP_MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 export const WHATSAPP_REQUEST_TIMEOUT_MS = 20_000;
 export const WHATSAPP_DOWNLOAD_TIMEOUT_MS = 60_000;
+
+/** A signup connection never attached to an inbox is deleted after a day. */
+export const WHATSAPP_PENDING_CONNECTION_TTL_SECONDS = 24 * 60 * 60;
+
+/** How long a sent reply id is remembered while the inbox stores the reply. */
+export const WHATSAPP_IN_FLIGHT_REPLY_TTL_SECONDS = 15 * 60;
+/** Waits before re-reading a reply whose status arrived before it was stored. */
+export const WHATSAPP_STATUS_RETRY_DELAYS_MS = [500, 1500];
 
 export const WHATSAPP_ERROR_CODES = {
   TOKEN_EXPIRED: 190,

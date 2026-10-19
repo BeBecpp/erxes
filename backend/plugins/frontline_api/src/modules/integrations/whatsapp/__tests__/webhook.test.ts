@@ -9,7 +9,10 @@ import {
   receiveWhatsappWebhook,
   verifyWhatsappWebhook,
 } from '../controller/webhook';
-import { hasValidWhatsappSignature } from '../utils/signature';
+import {
+  hasValidWhatsappSignature,
+  isWhatsappVerifyToken,
+} from '../utils/signature';
 
 jest.mock('~/connectionResolvers', () => ({ generateModels: jest.fn() }));
 jest.mock('erxes-api-shared/utils', () => ({ getSubdomain: jest.fn() }));
@@ -85,6 +88,16 @@ describe('hasValidWhatsappSignature', () => {
     );
     expect(hasValidWhatsappSignature(body, undefined, APP_SECRET)).toBe(false);
     expect(hasValidWhatsappSignature(body, sign('{"a":1}'), '')).toBe(false);
+  });
+});
+
+describe('isWhatsappVerifyToken', () => {
+  it('matches only the exact configured token', () => {
+    expect(isWhatsappVerifyToken('secret-token', 'secret-token')).toBe(true);
+    expect(isWhatsappVerifyToken('secret-tokeN', 'secret-token')).toBe(false);
+    expect(isWhatsappVerifyToken('secret', 'secret-token')).toBe(false);
+    expect(isWhatsappVerifyToken(['secret-token'], 'secret-token')).toBe(false);
+    expect(isWhatsappVerifyToken('', '')).toBe(false);
   });
 });
 

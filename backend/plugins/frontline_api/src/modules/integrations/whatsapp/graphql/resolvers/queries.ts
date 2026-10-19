@@ -7,6 +7,7 @@ import {
 import {
   getWhatsappConfig,
   getWhatsappWebhookUrl,
+  isSaas,
   resolveWhatsappApp,
 } from '@/integrations/whatsapp/config';
 
@@ -18,7 +19,7 @@ export interface IWhatsappConfigView {
   webhookUrl: string;
 }
 
-/** Settings view without the app secret. */
+/** Settings view without the app secret; SaaS shares one verify token, so it stays hidden. */
 export const getWhatsappConfigView = async (
   models: IContext['models'],
   subdomain: string,
@@ -28,7 +29,7 @@ export const getWhatsappConfigView = async (
   return {
     appId: app.appId,
     configId: app.configId,
-    verifyToken: app.verifyToken,
+    verifyToken: isSaas() ? '' : app.verifyToken,
     hasAppSecret: Boolean(app.appSecret),
     webhookUrl: getWhatsappWebhookUrl(subdomain),
   };

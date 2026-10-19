@@ -1,8 +1,8 @@
-import { useQuery } from '@apollo/client';
+import { useApolloClient, useQuery } from '@apollo/client';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { IconBrandWhatsapp, IconPhone } from '@tabler/icons-react';
-import { Badge, Button, Form, Input, Sheet, Spinner } from 'erxes-ui';
-import { useState } from 'react';
+import { Badge, Button, Form, Input, Sheet, Spinner, toast } from 'erxes-ui';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
 import { SelectBrand } from 'ui-modules';
@@ -11,6 +11,7 @@ import { IntegrationSteps } from '@/integrations/components/IntegrationSteps';
 import { useIntegrationAdd } from '@/integrations/hooks/useIntegrationAdd';
 import { IntegrationType } from '@/types/Integration';
 import {
+  WHATSAPP_DISCARD_CONNECTION,
   WHATSAPP_EMBEDDED_SIGNUP_CONFIG,
   WhatsappConnection,
   WhatsappEmbeddedSignupConfig,
@@ -231,6 +232,34 @@ const WhatsappSetup = ({ onClose }: { onClose: () => void }) => {
   const { id: channelId } = useParams<{ id: string }>();
   const { addIntegration, loading: creating } = useIntegrationAdd();
   const config = data?.whatsappEmbeddedSignupConfig;
+  const client = useApolloClient();
+  // The signup connection not yet attached to an inbox; it holds a token.
+  const pendingIdRef = useRef<string>();
+
+  const discardPending = useCallback(() => {
+    const _id = pendingIdRef.current;
+    pendingIdRef.current = undefined;
+
+    if (!_id) return;
+
+    // Silent cleanup: the server also expires unattached connections after a day.
+    client
+      .mutate({ mutation: WHATSAPP_DISCARD_CONNECTION, variables: { _id } })
+      .catch(() => undefined);
+  }, [client]);
+
+  // Closing the sheet before finishing drops the unused connection.
+  useEffect(() => discardPending, [discardPending]);
+
+  const handleConnected = (next: WhatsappConnection) => {
+    pendingIdRef.current = next._id;
+    setConnection(next);
+  };
+
+  const changeNumber = () => {
+    discardPending();
+    setConnection(undefined);
+  };
 
   const createIntegration = (values: SetupValues) => {
     if (!connection) return;
@@ -246,7 +275,11 @@ const WhatsappSetup = ({ onClose }: { onClose: () => void }) => {
           ...(values.pin ? { pin: values.pin } : {}),
         },
       },
-      onCompleted: onClose,
+      onCompleted: () => {
+        pendingIdRef.current = undefined;
+        toast({ title: t('created'), variant: 'success' });
+        onClose();
+      },
     });
   };
 
@@ -281,13 +314,15 @@ const WhatsappSetup = ({ onClose }: { onClose: () => void }) => {
       return (
         <WhatsappSetupStep
           connection={connection}
-          onChangeNumber={() => setConnection(undefined)}
+          onChangeNumber={changeNumber}
           onSubmit={createIntegration}
         />
       );
     }
 
-    return <WhatsappConnectStep config={config} onConnected={setConnection} />;
+    return (
+      <WhatsappConnectStep config={config} onConnected={handleConnected} />
+    );
   };
 
   return (

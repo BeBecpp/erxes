@@ -1,21 +1,28 @@
 import type { Request, Response } from 'express';
-import { getSubdomain } from 'erxes-api-shared/utils';
+import { getSubdomain, isDev } from 'erxes-api-shared/utils';
 import { generateModels } from '~/connectionResolvers';
 import { WHATSAPP_CONFIG_CODES } from '@/integrations/whatsapp/constants';
 import { getWhatsappConfig } from '@/integrations/whatsapp/config';
 import { receiveWhatsappChange } from '@/integrations/whatsapp/controller/receiveMessage';
 import { debugWhatsapp } from '@/integrations/whatsapp/debuggers';
 import { whatsappWebhookSchema } from '@/integrations/whatsapp/utils/payload';
-import { hasValidWhatsappSignature } from '@/integrations/whatsapp/utils/signature';
+import {
+  hasValidWhatsappSignature,
+  isWhatsappVerifyToken,
+} from '@/integrations/whatsapp/utils/signature';
 
 type RawBodyRequest = Request & { rawBody?: Buffer };
+
+// Dev tunnels carry their own host; realtime topics are keyed by 'localhost'.
+const getWebhookSubdomain = (req: Request) =>
+  isDev ? 'localhost' : getSubdomain(req);
 
 /** Answers Meta's subscription challenge with the tenant verify token. */
 export const verifyWhatsappWebhook = async (
   req: Request,
   res: Response,
 ): Promise<void> => {
-  const models = await generateModels(getSubdomain(req));
+  const models = await generateModels(getWebhookSubdomain(req));
   const verifyToken = await getWhatsappConfig(
     models,
     WHATSAPP_CONFIG_CODES.VERIFY_TOKEN,
@@ -24,8 +31,7 @@ export const verifyWhatsappWebhook = async (
 
   if (
     req.query['hub.mode'] === 'subscribe' &&
-    verifyToken &&
-    req.query['hub.verify_token'] === verifyToken &&
+    isWhatsappVerifyToken(req.query['hub.verify_token'], verifyToken) &&
     typeof challenge === 'string'
   ) {
     res.status(200).type('text/plain').send(challenge);
@@ -43,7 +49,7 @@ export const receiveWhatsappWebhook = async (
   req: RawBodyRequest,
   res: Response,
 ): Promise<void> => {
-  const subdomain = getSubdomain(req);
+  const subdomain = getWebhookSubdomain(req);
   const models = await generateModels(subdomain);
   const appSecret = await getWhatsappConfig(
     models,
@@ -63,10 +69,7 @@ export const receiveWhatsappWebhook = async (
 
   const payload = whatsappWebhookSchema.safeParse(req.body);
 
-  if (
-    !payload.success ||
-    payload.data.object !== 'whatsapp_business_account'
-  ) {
+  if (!payload.success || payload.data.object !== 'whatsapp_business_account') {
     res.sendStatus(200);
     return;
   }
@@ -87,7 +90,9 @@ export const receiveWhatsappWebhook = async (
     res.sendStatus(200);
   } catch (error) {
     debugWhatsapp(
-      `WhatsApp webhook failed: ${error instanceof Error ? error.message : String(error)}`,
+      `WhatsApp webhook failed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
     );
     res.sendStatus(500);
   }

@@ -46,7 +46,9 @@ export const assertWhatsappTokenGrants = (
 
   if (missing.length) {
     throw new Error(
-      `Meta did not grant ${missing.join(' and ')}. Connect again and allow every requested permission.`,
+      `Meta did not grant ${missing.join(
+        ' and ',
+      )}. Connect again and allow every requested permission.`,
     );
   }
 
@@ -133,6 +135,7 @@ export const finishWhatsappEmbeddedSignup = async ({
         accessToken,
         healthStatus: 'healthy',
         connectedBy: userId,
+        pendingSince: new Date(),
       },
       // A stale link to a removed inbox integration must not block reuse.
       $unset: { erxesApiId: '', error: '' },

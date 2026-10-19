@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const en = {
@@ -45,8 +46,7 @@ const en = {
     "Meta didn't send the account details. Add this site's domain to the Meta app's allowed domains, then try again.",
   metaError: 'Meta reported an error',
   connected: 'WhatsApp number verified',
-  connectedDescription:
-    'Finish the inbox setup to start receiving messages.',
+  connectedDescription: 'Finish the inbox setup to start receiving messages.',
   windowHint:
     "You can reply freely within 24 hours of a customer's last message. Outside that window WhatsApp only accepts approved templates.",
   paymentHint:
@@ -87,6 +87,8 @@ const en = {
   repairFailed: 'WhatsApp repair failed',
   updated: 'Integration updated',
   updateFailed: 'Could not update the integration',
+  created: 'WhatsApp integration created',
+  detailLoadFailed: 'Could not load the integration.',
   phoneNumber: 'Phone number',
   businessName: 'Business name',
   connectionMissing: 'No WhatsApp number is linked to this integration.',
@@ -182,6 +184,8 @@ const mn: Record<keyof typeof en, string> = {
   repairFailed: 'WhatsApp засвар амжилтгүй',
   updated: 'Интеграц шинэчлэгдлээ',
   updateFailed: 'Интеграцыг шинэчилж чадсангүй',
+  created: 'WhatsApp интеграц үүслээ',
+  detailLoadFailed: 'Интеграцыг ачаалж чадсангүй.',
   phoneNumber: 'Утасны дугаар',
   businessName: 'Бизнесийн нэр',
   connectionMissing: 'Энэ интеграцтай холбосон WhatsApp дугаар алга.',
@@ -203,8 +207,12 @@ export const useWhatsappTranslation = (): {
     }
   }
 
-  return {
-    t: (key) =>
+  // Stable across renders so callbacks and effects that use it do not re-run.
+  const t = useCallback(
+    (key: WhatsappTranslationKey) =>
       i18n.t(key, { ns: 'frontline-whatsapp', defaultValue: en[key] }),
-  };
+    [i18n],
+  );
+
+  return { t };
 };
