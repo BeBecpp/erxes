@@ -157,6 +157,67 @@ export const ORIGIN_TR_JOURNALS = TR_JOURNAL_GROUPS.flatMap((group) =>
   group.items.map((item) => item.journal),
 );
 
+export type TrRecordJournalGroup = {
+  label: string;
+  icon: Icon;
+  journals: TrJournalEnum[];
+};
+
+export const TR_RECORD_JOURNAL_GROUPS: TrRecordJournalGroup[] = [
+  {
+    label: 'general',
+    icon: IconBook,
+    journals: [
+      TrJournalEnum.MAIN,
+      TrJournalEnum.TAX,
+      TrJournalEnum.EXCHANGE_DIFF,
+    ],
+  },
+  {
+    label: 'cash-and-bank',
+    icon: IconBuildingBank,
+    journals: [TrJournalEnum.CASH, TrJournalEnum.BANK],
+  },
+  {
+    label: 'calculation',
+    icon: IconCalculator,
+    journals: [TrJournalEnum.RECEIVABLE, TrJournalEnum.PAYABLE],
+  },
+  {
+    label: 'inventory-label',
+    icon: IconPackage,
+    journals: [
+      TrJournalEnum.INV_INCOME,
+      TrJournalEnum.INV_OUT,
+      TrJournalEnum.INV_JUSTIFY,
+      TrJournalEnum.INV_MOVE,
+      TrJournalEnum.INV_MOVE_IN,
+      TrJournalEnum.INV_SALE,
+      TrJournalEnum.INV_SALE_OUT,
+      TrJournalEnum.INV_SALE_COST,
+      TrJournalEnum.INV_SALE_RETURN,
+      TrJournalEnum.INV_SALE_RETURN_OUT,
+      TrJournalEnum.INV_SALE_RETURN_COST,
+    ],
+  },
+  {
+    label: 'fixed-asset',
+    icon: IconBuildingFactory2,
+    journals: [
+      TrJournalEnum.FXA_INCOME,
+      TrJournalEnum.FXA_DEP_IN,
+      TrJournalEnum.FXA_OUT,
+      TrJournalEnum.FXA_DEP_OUT,
+      TrJournalEnum.FXA_DEP,
+      TrJournalEnum.FXA_MOVE,
+      TrJournalEnum.FXA_MOVE_IN,
+      TrJournalEnum.FXA_SALE,
+      TrJournalEnum.FXA_SALE_OUT,
+      TrJournalEnum.FXA_SALE_COST,
+    ],
+  },
+];
+
 export const TR_SIDES = {
   DEBIT: 'dt' as const,
   CREDIT: 'ct' as const,

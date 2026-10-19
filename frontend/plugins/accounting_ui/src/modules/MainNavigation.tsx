@@ -12,7 +12,7 @@ import { useTranslation } from 'react-i18next';
 
 export const MainNavigation = () => {
   const { t } = useTranslation('accounting');
-  const setReceiptsPanelOpen = useSetAtom(sidebarPanelOpenState);
+  const setSidebarPanelOpen = useSetAtom(sidebarPanelOpenState);
 
   return (
     <>
@@ -21,13 +21,14 @@ export const MainNavigation = () => {
         icon={IconListDetails}
         path="main"
         pathPrefix="accounting"
-        onClick={() => setReceiptsPanelOpen(true)}
+        onClick={() => setSidebarPanelOpen(true)}
       />
       <NavigationMenuLinkItem
         name={t('journal-entries')}
         icon={IconListCheck}
         path="records"
         pathPrefix="accounting"
+        onClick={() => setSidebarPanelOpen(true)}
       />
       <NavigationMenuLinkItem
         name={t('incomplete-vouchers')}
