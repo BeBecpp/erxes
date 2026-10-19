@@ -108,8 +108,13 @@
   sheet or choosing another number before finishing discards the unused
   connection with `frontlineWhatsappDiscardConnection`. Row actions edit name/brand (number shown
   read-only) and repair the connection. Integrations config holds the Meta app
-  settings (hidden on SaaS) with the copyable webhook URL. WhatsApp
-  conversations render with the native inbox messages and composer.
+  settings (hidden on SaaS) with the copyable webhook URL; when WhatsApp is
+  not configured, the Add sheet links to that page, or on SaaS asks the admin
+  to contact support. WhatsApp conversations render with the native inbox
+  messages and composer; `WhatsappMessageInputWrapper` shows a banner above
+  the composer once 24 hours have passed since the customer's last message
+  (internal notes still work), and the composer caps each attachment by the
+  media type WhatsApp receives it as (`whatsapp/attachmentLimits.ts`).
 
 - Telegram setup derives its public address from `REACT_APP_API_URL` and the
   existing `/pl:frontline` gateway route. Local/non-public API addresses require
@@ -1104,7 +1109,14 @@ to, bouncedRecipients, retryable, canRetry }` for its delivery state;
   refetches `Integrations` and `frontlineWhatsappConnection`; the edit form
   shows a retryable error when the integration detail fails to load.
   `useWhatsappTranslation` returns a stable `t`, so the signup hook's message
-  listener is not re-bound on every render. A per-call `onCompleted` replaces
+  listener is not re-bound on every render. `WhatsappIntegrationRepair` lives
+  in its own file so `IntegrationMoreColumn` imports it statically without
+  pulling the lazily loaded `WhatsappIntegrationActions` into the main chunk.
+  The 24-hour banner reads the newest messages page with the same query and
+  variables as `ConversationMessages` (`cache-first`), so it adds no request;
+  it stays hidden when the customer's last message is not on that page.
+  `getWhatsappAttachmentMaximumBytes` must mirror the backend's
+  `getOutgoingMediaType`. A per-call `onCompleted` replaces
   the hook's, so a WhatsApp create must show its own toast.
 - Telegram suppresses automatic response-template suggestions while typing;
   the explicit template selector remains available. Preserve other providers'
@@ -2681,7 +2693,7 @@ null }`, fall back to the route pipeline and skip without one; never pass
 
 ### `2026-10-19` — WhatsApp through Meta Embedded Signup
 
-- **Summary:** Adds the WhatsApp integration with an Embedded Signup–only Add sheet, edit/repair row actions, Meta app config section and native inbox rendering; its documents are typed from codegen. Unused signup connections are discarded on close, creation shows a success toast, repair refreshes the number details and the edit form has an error state.
+- **Summary:** Adds the WhatsApp integration with an Embedded Signup–only Add sheet, edit/repair row actions, Meta app config section and native inbox rendering; its documents are typed from codegen. Unused signup connections are discarded on close, creation shows a success toast, repair refreshes the number details and the edit form has an error state; the composer warns after the 24-hour window and caps WhatsApp attachments by media type, and the not-configured state links to the plugin settings path.
 - **Affected areas:** `src/modules/integrations/whatsapp`, integration registries/icons/chips, detail and config pages, row actions, native conversation kinds.
 - **Contracts changed:** Consumes the new `frontline_api` WhatsApp GraphQL operations (including `whatsappDiscardConnection`) and kind `whatsapp-messenger`; `useIntegrationDetail` also returns `error` and `refetch`.
 

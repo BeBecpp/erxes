@@ -6,7 +6,7 @@ import {
 
 export const router: Router = Router();
 
-router.get('/webhook', async (req, res) => {
+router.get('/receive', async (req, res) => {
   try {
     await verifyWhatsappWebhook(req, res);
   } catch {
@@ -14,7 +14,7 @@ router.get('/webhook', async (req, res) => {
   }
 });
 
-router.post('/webhook', async (req, res) => {
+router.post('/receive', async (req, res) => {
   try {
     await receiveWhatsappWebhook(req, res);
   } catch {

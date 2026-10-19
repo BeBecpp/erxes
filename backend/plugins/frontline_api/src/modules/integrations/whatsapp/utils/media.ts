@@ -20,16 +20,66 @@ const EXTENSIONS: Record<string, string> = {
   'application/pdf': 'pdf',
 };
 
+/**
+ * Sender-declared types kept as-is. Anything else is stored as an opaque
+ * download so a customer cannot plant a page that renders in the browser.
+ */
+const SAFE_MIME_TYPES = new Set([
+  ...Object.keys(EXTENSIONS),
+  'image/gif',
+  'text/plain',
+  'text/csv',
+  'application/zip',
+  'application/msword',
+  'application/vnd.ms-excel',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+]);
+
+/**
+ * Extensions a browser renders as an active document. Core's read-file picks
+ * the inline content type from the stored name's extension, so these never
+ * stay last in a stored name.
+ */
+const ACTIVE_EXTENSIONS = new Set([
+  'svg',
+  'svgz',
+  'xml',
+  'xsl',
+  'xht',
+  'xhtml',
+  'htm',
+  'html',
+  'shtml',
+  'mht',
+  'mhtml',
+]);
+
+export const getSafeWhatsappMimeType = (mimeType: string) =>
+  SAFE_MIME_TYPES.has(mimeType) ? mimeType : 'application/octet-stream';
+
+const neutralizeExtension = (name: string) => {
+  const extension = name.split('.').pop()?.toLowerCase() || '';
+
+  return name.includes('.') && ACTIVE_EXTENSIONS.has(extension)
+    ? `${name}.txt`
+    : name;
+};
+
 const getFileName = (media: IWhatsappMediaRef, mimeType: string) => {
   if (media.fileName) {
     const name = sanitizeFilename(basename(media.fileName.replace(/\\/g, '/')));
 
-    if (name) return name;
+    if (name) return neutralizeExtension(name);
   }
 
   const extension = EXTENSIONS[mimeType.split(';')[0].trim()];
 
-  return extension ? `whatsapp-${media.kind}.${extension}` : `whatsapp-${media.kind}`;
+  return extension
+    ? `whatsapp-${media.kind}.${extension}`
+    : `whatsapp-${media.kind}`;
 };
 
 /** Downloads webhook media from Meta into workspace storage; Meta's URL expires within minutes. */
@@ -46,9 +96,12 @@ export const storeWhatsappMedia = async ({
     accessToken,
     media.id,
   );
-  const type = (media.mimeType || downloadedType || 'application/octet-stream')
-    .split(';')[0]
-    .trim();
+  const type = getSafeWhatsappMimeType(
+    (media.mimeType || downloadedType || 'application/octet-stream')
+      .split(';')[0]
+      .trim()
+      .toLowerCase(),
+  );
   const name = getFileName(media, type);
 
   let temporaryDirectory: string | undefined;

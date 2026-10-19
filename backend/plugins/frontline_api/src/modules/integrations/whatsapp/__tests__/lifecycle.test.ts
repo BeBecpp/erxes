@@ -22,7 +22,7 @@ jest.mock('../config', () => ({
   getWhatsappWebhookUrl: jest
     .fn()
     .mockReturnValue(
-      'https://tenant.example.com/pl:frontline/whatsapp/webhook',
+      'https://tenant.example.com/pl:frontline/whatsapp/receive',
     ),
 }));
 jest.mock('../graphApi', () => {
@@ -99,7 +99,7 @@ describe('whatsappCreateIntegration', () => {
       expect.stringMatching(/^\d{6}$/),
     );
     expect(subscribeWabaWebhooks).toHaveBeenCalledWith('token', 'waba-1', {
-      url: 'https://tenant.example.com/pl:frontline/whatsapp/webhook',
+      url: 'https://tenant.example.com/pl:frontline/whatsapp/receive',
       verifyToken: 'verify-token',
     });
     expect(models.WhatsappIntegrations.updateOne).toHaveBeenLastCalledWith(

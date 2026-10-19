@@ -554,7 +554,8 @@ WhatsApp lives in `src/modules/integrations/whatsapp/`: `signup.ts` finishes
 Embedded Signup, `messageBroker.ts` owns create/remove/repair/status/reply,
 `controller/` handles the webhook, ingestion, statuses and replies, `graphApi.ts`
 is the only Graph API client, and `config.ts` resolves the Meta app settings.
-The root router mounts its webhook at `/whatsapp/webhook`.
+The root router mounts its webhook at `/whatsapp/receive`, like the other
+integrations.
 
 Telegram lives in `src/modules/integrations/telegram/`: `controller/` ingests,
 reconciles and sends messages; `db/` owns provider mappings; `client.ts` owns
@@ -645,8 +646,8 @@ The root router mounts its authenticated webhook at `/telegram`.
 
 ### Provides
 
-- WhatsApp: `GET /whatsapp/webhook` answers Meta's challenge with the tenant
-  verify token; `POST /whatsapp/webhook` requires a valid
+- WhatsApp: `GET /whatsapp/receive` answers Meta's challenge with the tenant
+  verify token; `POST /whatsapp/receive` requires a valid
   `X-Hub-Signature-256` over the raw body and returns 500 on ingestion
   failures so Meta retries. GraphQL: `whatsappConfig` and
   `whatsappUpdateConfig` (`integrationsEdit`; the secret is write-only and
@@ -1410,7 +1411,11 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
   a status for an in-flight reply is never acknowledged before it is applied.
   The webhook resolves `localhost` in development, like Facebook, so realtime
   topics match the browser. The WhatsApp module imports no helper from
-  another integration.
+  another integration. Inbound media keeps its MIME type only when it is on
+  the safe list in `utils/media.ts` (otherwise `application/octet-stream`),
+  and a stored name ending in a browser-rendered extension (`svg`, `xml`,
+  `html`, …) gets `.txt` appended, because core `read-file` picks the inline
+  content type from the stored name's extension.
 - Keep Telegram as an additive dispatcher case. Preserve other providers'
   delivery receipts, notifications, human-handoff state and message storage.
   Only Telegram chats without `customerId` may reply without a Core customer;
@@ -1605,9 +1610,9 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
 
 ### `2026-10-19` — WhatsApp delivery, customer and signup hardening
 
-- **Summary:** Statuses that beat their reply are retried instead of dropped, Core customers use a stable id, abandoned signup connections are discarded or expire, and the webhook compares its verify token in constant time and resolves `localhost` in development.
+- **Summary:** Statuses that beat their reply are retried instead of dropped, Core customers use a stable id, abandoned signup connections are discarded or expire, inbound files cannot be stored as browser-rendered documents, and the webhook compares its verify token in constant time and resolves `localhost` in development.
 - **Affected areas:** `src/modules/integrations/whatsapp` (statuses, store, send, webhook, signup, message broker, schema).
-- **Contracts changed:** New GraphQL `whatsappDiscardConnection(_id)`; `whatsappConfig.verifyToken` is empty on SaaS; `whatsapp_integrations.pendingSince` with a TTL index.
+- **Contracts changed:** New GraphQL `whatsappDiscardConnection(_id)`; `whatsappConfig.verifyToken` is empty on SaaS; `whatsapp_integrations.pendingSince` with a TTL index; inbound attachments outside the safe MIME list are stored as `application/octet-stream`.
 
 ### `2026-10-18` — Ticket remembered through action placement
 
@@ -1631,7 +1636,7 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
 
 - **Summary:** Adds WhatsApp onboarding through Meta Embedded Signup only, signed webhook ingestion into the native inbox, delivery statuses, replies, repair and removal.
 - **Affected areas:** `src/modules/integrations/whatsapp`, inbox provider dispatch (create/remove/repair/reply/status), kind map, customer merge, model registration and routes.
-- **Contracts changed:** New `/whatsapp/webhook`; GraphQL `whatsappConfig`, `whatsappUpdateConfig`, `whatsappEmbeddedSignupConfig`, `whatsappEmbeddedSignupFinish`, `whatsappConnection`; integration kind `whatsapp-messenger`.
+- **Contracts changed:** New `/whatsapp/receive`; GraphQL `whatsappConfig`, `whatsappUpdateConfig`, `whatsappEmbeddedSignupConfig`, `whatsappEmbeddedSignupFinish`, `whatsappConnection`; integration kind `whatsapp-messenger`.
 
 ### `2026-10-06` — Telegram group upgrades and attachment URLs
 

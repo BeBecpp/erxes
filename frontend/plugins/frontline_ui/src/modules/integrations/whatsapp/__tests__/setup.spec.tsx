@@ -81,6 +81,9 @@ jest.mock('erxes-ui', () => {
   };
 });
 jest.mock('ui-modules', () => ({
+  currentOrganizationState: jest
+    .requireActual<typeof import('jotai')>('jotai')
+    .atom<{ type: string } | null>(null),
   SelectBrand: ({
     value,
     onValueChange,
@@ -295,6 +298,31 @@ test('guides admins to the config page when Embedded Signup is not configured', 
   expect(await screen.findByText('notConfigured')).toBeTruthy();
   expect(
     screen.getByText('openConfig').closest('a')?.getAttribute('href'),
-  ).toBe('/settings/frontline/config');
+  ).toBe('/frontline/settings/config');
   expect(screen.queryByText('continueWithMeta')).toBeNull();
+});
+
+test('tells SaaS admins to contact support instead of linking to hidden settings', async () => {
+  const { currentOrganizationState } = jest.requireMock<{
+    currentOrganizationState: import('jotai').PrimitiveAtom<{
+      type: string;
+    } | null>;
+  }>('ui-modules');
+  const { Provider, createStore } =
+    jest.requireActual<typeof import('jotai')>('jotai');
+  const store = createStore();
+  store.set(currentOrganizationState, { type: 'saas' });
+
+  render(
+    <Provider store={store}>
+      <MockedProvider addTypename={false} mocks={[configMock(false)]}>
+        <WhatsappIntegrationDetail />
+      </MockedProvider>
+    </Provider>,
+  );
+
+  fireEvent.click(screen.getByText('Open setup'));
+
+  expect(await screen.findByText('notConfiguredSaas')).toBeTruthy();
+  expect(screen.queryByText('openConfig')).toBeNull();
 });

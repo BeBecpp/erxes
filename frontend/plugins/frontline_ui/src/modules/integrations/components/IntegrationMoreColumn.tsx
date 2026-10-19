@@ -10,7 +10,7 @@ import { IntegrationType } from '@/types/Integration';
 import { FacebookIntegrationRepair } from '../facebook/components/FacebookIntegrationRepair';
 import { InstagramIntegrationRepair } from '../instagram/components/InstagramIntegrationRepair';
 import { DiscordIntegrationRepair } from '../discord/components/DiscordIntegrationActions';
-import { WhatsappIntegrationRepair } from '../whatsapp/WhatsappIntegrationActions';
+import { WhatsappIntegrationRepair } from '../whatsapp/WhatsappIntegrationRepair';
 import { EMInstallScript } from '../erxes-messenger/components/EMInstallScript';
 import { MoveToChannelDialog } from '@/channels/components/move-resources/MoveToChannelDialog';
 import { ChannelResourceType } from '@/channels/types';

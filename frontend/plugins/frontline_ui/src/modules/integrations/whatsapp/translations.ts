@@ -20,6 +20,8 @@ const en = {
   notConfiguredDescription:
     'An admin must add the Meta App ID, App Secret and Embedded Signup Configuration ID in Settings → Integrations config.',
   openConfig: 'Open integrations config',
+  notConfiguredSaas:
+    'WhatsApp is not enabled for this workspace yet. Contact erxes support to turn it on.',
   sdkLoadFailed:
     "Could not load Meta's sign-in. Check your connection or content blockers and try again.",
   popupHint: "Allow pop-ups for this site if Meta's window does not open.",
@@ -88,6 +90,9 @@ const en = {
   updated: 'Integration updated',
   updateFailed: 'Could not update the integration',
   created: 'WhatsApp integration created',
+  windowClosedTitle: 'The 24-hour reply window has closed',
+  windowClosedDescription:
+    'WhatsApp only delivers free-form replies within 24 hours of the customer’s last message. Ask the customer to write again, or send an approved template from WhatsApp Manager. Internal notes still work.',
   detailLoadFailed: 'Could not load the integration.',
   phoneNumber: 'Phone number',
   businessName: 'Business name',
@@ -115,6 +120,8 @@ const mn: Record<keyof typeof en, string> = {
   notConfiguredDescription:
     'Админ Тохиргоо → Интеграцын тохиргоо хэсэгт Meta App ID, App Secret болон Embedded Signup Configuration ID-г оруулах шаардлагатай.',
   openConfig: 'Интеграцын тохиргоо нээх',
+  notConfiguredSaas:
+    'Энэ ажлын орчинд WhatsApp идэвхжээгүй байна. Идэвхжүүлэхийн тулд erxes-ийн дэмжлэгтэй холбогдоно уу.',
   sdkLoadFailed:
     'Meta-гийн нэвтрэлтийг ачаалж чадсангүй. Холболт эсвэл контент блоклогчоо шалгаад дахин оролдоно уу.',
   popupHint:
@@ -185,6 +192,9 @@ const mn: Record<keyof typeof en, string> = {
   updated: 'Интеграц шинэчлэгдлээ',
   updateFailed: 'Интеграцыг шинэчилж чадсангүй',
   created: 'WhatsApp интеграц үүслээ',
+  windowClosedTitle: '24 цагийн хариулах хугацаа дууссан',
+  windowClosedDescription:
+    'WhatsApp зөвхөн харилцагчийн сүүлийн мессежээс хойш 24 цагийн дотор чөлөөт хариуг хүргэнэ. Харилцагчаас дахин бичихийг хүсэх эсвэл WhatsApp Manager-аас батлагдсан загвар илгээнэ үү. Дотоод тэмдэглэл ажиллана.',
   detailLoadFailed: 'Интеграцыг ачаалж чадсангүй.',
   phoneNumber: 'Утасны дугаар',
   businessName: 'Бизнесийн нэр',

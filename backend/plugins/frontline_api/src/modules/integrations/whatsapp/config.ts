@@ -76,5 +76,5 @@ export const getWhatsappWebhookUrl = (subdomain: string): string => {
       ? `${DOMAIN}/gateway/pl:frontline`
       : `${DOMAIN}/pl:frontline`;
 
-  return `${base}/whatsapp/webhook`;
+  return `${base}/whatsapp/receive`;
 };

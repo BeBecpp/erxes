@@ -5,10 +5,12 @@ import { Badge, Button, Form, Input, Sheet, Spinner, toast } from 'erxes-ui';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { Link, useParams } from 'react-router-dom';
-import { SelectBrand } from 'ui-modules';
+import { useAtomValue } from 'jotai';
+import { SelectBrand, currentOrganizationState } from 'ui-modules';
 import { z } from 'zod';
 import { IntegrationSteps } from '@/integrations/components/IntegrationSteps';
 import { useIntegrationAdd } from '@/integrations/hooks/useIntegrationAdd';
+import { FrontlinePaths } from '@/types/FrontlinePaths';
 import { IntegrationType } from '@/types/Integration';
 import {
   WHATSAPP_DISCARD_CONNECTION,
@@ -45,19 +47,29 @@ const WhatsappConnectStep = ({
   onConnected: (connection: WhatsappConnection) => void;
 }) => {
   const { t } = useWhatsappTranslation();
+  const isSaas = useAtomValue(currentOrganizationState)?.type === 'saas';
   const { launch, phase, sdkStatus } = useWhatsappEmbeddedSignup({
     config,
     onConnected,
   });
 
   if (!config.isConfigured) {
+    // SaaS manages the Meta app centrally and hides its settings form.
     return (
       <div className="flex flex-col items-start gap-3 rounded-lg border p-4 text-sm">
         <p className="font-medium">{t('notConfigured')}</p>
-        <p className="text-muted-foreground">{t('notConfiguredDescription')}</p>
-        <Button asChild variant="outline">
-          <Link to="/settings/frontline/config">{t('openConfig')}</Link>
-        </Button>
+        <p className="text-muted-foreground">
+          {t(isSaas ? 'notConfiguredSaas' : 'notConfiguredDescription')}
+        </p>
+        {!isSaas && (
+          <Button asChild variant="outline">
+            <Link
+              to={`/${FrontlinePaths.Frontline}/settings${FrontlinePaths.IntegrationConfig}`}
+            >
+              {t('openConfig')}
+            </Link>
+          </Button>
+        )}
       </div>
     );
   }
