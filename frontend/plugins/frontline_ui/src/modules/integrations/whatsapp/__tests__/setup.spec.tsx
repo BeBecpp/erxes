@@ -286,6 +286,35 @@ test('validates the brand and PIN before creating', async () => {
   expect(screen.getByText('brandRequired')).toBeTruthy();
 });
 
+test("requires the customer's own PIN for a number that still needs registering", async () => {
+  const created = jest.fn();
+
+  render(
+    <MockedProvider
+      addTypename={false}
+      mocks={[
+        configMock(true),
+        discardMock(
+          jest.fn(() => ({ data: { whatsappDiscardConnection: true } })),
+        ),
+      ]}
+    >
+      <WhatsappIntegrationDetail />
+    </MockedProvider>,
+  );
+
+  fireEvent.click(screen.getByText('Open setup'));
+  fireEvent.click(await screen.findByText('continueWithMeta'));
+  fireEvent.change(await screen.findByLabelText('brandId'), {
+    target: { value: 'brand-1' },
+  });
+  fireEvent.click(screen.getByText('finish'));
+
+  expect(await screen.findByText('pinRequired')).toBeTruthy();
+  expect(screen.getByText('pinHint')).toBeTruthy();
+  expect(created).not.toHaveBeenCalled();
+});
+
 test('guides admins to the config page when Embedded Signup is not configured', async () => {
   render(
     <MockedProvider addTypename={false} mocks={[configMock(false)]}>

@@ -329,6 +329,29 @@ const isMetaMediaUrl = (value: string) => {
   );
 };
 
+/** Reads a body chunk by chunk, cancelling it once it passes `maxBytes`. */
+const readWithinLimit = async (
+  reader: ReadableStreamDefaultReader<Uint8Array>,
+  maxBytes: number,
+  chunks: Uint8Array[] = [],
+  receivedBytes = 0,
+): Promise<Buffer> => {
+  const { done, value } = await reader.read();
+
+  if (done) return Buffer.concat(chunks, receivedBytes);
+
+  const totalBytes = receivedBytes + value.byteLength;
+
+  if (totalBytes > maxBytes) {
+    await reader.cancel();
+    throw new WhatsappMediaTooLargeError();
+  }
+
+  chunks.push(value);
+
+  return readWithinLimit(reader, maxBytes, chunks, totalBytes);
+};
+
 /** Resolves a webhook media id and downloads it within the size limit. */
 export const downloadWhatsappMedia = async (
   accessToken: string,
@@ -363,30 +386,13 @@ export const downloadWhatsappMedia = async (
   }
 
   const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let receivedBytes = 0;
 
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-
-      if (done) break;
-
-      receivedBytes += value.byteLength;
-
-      if (receivedBytes > WHATSAPP_MAX_DOWNLOAD_BYTES) {
-        await reader.cancel();
-        throw new WhatsappMediaTooLargeError();
-      }
-
-      chunks.push(value);
-    }
+    return {
+      buffer: await readWithinLimit(reader, WHATSAPP_MAX_DOWNLOAD_BYTES),
+      mimeType: media.mime_type,
+    };
   } finally {
     reader.releaseLock();
   }
-
-  return {
-    buffer: Buffer.concat(chunks, receivedBytes),
-    mimeType: media.mime_type,
-  };
 };

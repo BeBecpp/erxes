@@ -93,18 +93,18 @@ beforeEach(() => {
 });
 
 describe('whatsappCreateIntegration', () => {
-  it('registers a pending number, subscribes the tenant webhook and attaches it', async () => {
+  it("registers a pending number with the customer's PIN, subscribes the tenant webhook and attaches it", async () => {
     await expect(
       whatsappCreateIntegration({
         subdomain: 'tenant',
-        data: createData({ connectionId: 'conn-1' }),
+        data: createData({ connectionId: 'conn-1', pin: '123456' }),
       }),
     ).resolves.toEqual({ status: 'success' });
 
-    expect(registerPhoneNumber).toHaveBeenCalledWith(
-      'token',
-      '111',
-      expect.stringMatching(/^\d{6}$/),
+    expect(registerPhoneNumber).toHaveBeenCalledWith('token', '111', '123456');
+    expect(models.WhatsappIntegrations.updateOne).toHaveBeenCalledWith(
+      { _id: 'conn-1' },
+      { $set: { registrationPin: '123456' } },
     );
     expect(subscribeWabaWebhooks).toHaveBeenCalledWith('token', 'waba-1', {
       url: 'https://tenant.example.com/pl:frontline/whatsapp/receive',
@@ -123,7 +123,38 @@ describe('whatsappCreateIntegration', () => {
     );
   });
 
-  it('asks for the existing PIN when the number has two-step verification', async () => {
+  it('never generates a PIN: a pending number without one is not registered', async () => {
+    jest.mocked(models.WhatsappIntegrations.exists).mockResolvedValue(null);
+
+    await expect(
+      whatsappCreateIntegration({
+        subdomain: 'tenant',
+        data: createData({ connectionId: 'conn-1' }),
+      }),
+    ).rejects.toThrow("Enter this number's 6-digit two-step verification PIN");
+    expect(registerPhoneNumber).not.toHaveBeenCalled();
+    expect(subscribeWabaWebhooks).not.toHaveBeenCalled();
+    expect(releaseWaba).toHaveBeenCalledWith('waba-1', 'tenant');
+  });
+
+  it('needs no PIN for a number already on the Cloud API', async () => {
+    jest
+      .mocked(models.WhatsappIntegrations.getConnection)
+      .mockResolvedValueOnce({
+        ...connection,
+        phoneStatus: 'CONNECTED',
+      } as never);
+
+    await expect(
+      whatsappCreateIntegration({
+        subdomain: 'tenant',
+        data: createData({ connectionId: 'conn-1' }),
+      }),
+    ).resolves.toEqual({ status: 'success' });
+    expect(registerPhoneNumber).not.toHaveBeenCalled();
+  });
+
+  it('reports a PIN that does not match the number', async () => {
     jest
       .mocked(registerPhoneNumber)
       .mockRejectedValueOnce(new WhatsappGraphError('PIN mismatch', 133005));
@@ -131,9 +162,9 @@ describe('whatsappCreateIntegration', () => {
     await expect(
       whatsappCreateIntegration({
         subdomain: 'tenant',
-        data: createData({ connectionId: 'conn-1' }),
+        data: createData({ connectionId: 'conn-1', pin: '123456' }),
       }),
-    ).rejects.toThrow('Enter its 6-digit PIN');
+    ).rejects.toThrow('PIN is incorrect');
     expect(subscribeWabaWebhooks).not.toHaveBeenCalled();
   });
 
@@ -283,6 +314,47 @@ describe('WABA ownership in the integration lifecycle', () => {
       'conn-1',
       owned,
     );
+  });
+});
+
+describe('whatsappRepairIntegration registration', () => {
+  const findOneWith = (value: unknown) => ({
+    select: jest.fn().mockResolvedValue(value),
+  });
+
+  it("re-registers with the customer's stored PIN", async () => {
+    jest
+      .mocked(models.WhatsappIntegrations.findOne)
+      .mockReturnValue(
+        findOneWith({ ...connection, registrationPin: '654321' }) as never,
+      );
+
+    await expect(
+      whatsappRepairIntegration({
+        subdomain: 'tenant',
+        data: { integrationId: 'inbox-1' },
+      }),
+    ).resolves.toEqual({ status: 'success' });
+    expect(registerPhoneNumber).toHaveBeenCalledWith('token', '111', '654321');
+  });
+
+  it('asks to reconnect with the PIN when none is stored', async () => {
+    jest
+      .mocked(models.WhatsappIntegrations.findOne)
+      .mockReturnValue(findOneWith(connection) as never);
+
+    const result = await whatsappRepairIntegration({
+      subdomain: 'tenant',
+      data: { integrationId: 'inbox-1' },
+    });
+
+    expect(result).toEqual({
+      status: 'error',
+      errorMessage: expect.stringContaining(
+        'connect the number again with its PIN',
+      ),
+    });
+    expect(registerPhoneNumber).not.toHaveBeenCalled();
   });
 });
 

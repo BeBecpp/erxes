@@ -9,6 +9,7 @@ import {
 } from '../controller/sendMessage';
 import { WhatsappGraphError, sendWhatsappMessage } from '../graphApi';
 import {
+  clearWhatsappRepliesInFlight,
   isWhatsappReplyInFlight,
   markWhatsappReplyInFlight,
 } from '../utils/inFlight';
@@ -26,6 +27,7 @@ jest.mock('../utils/attachments', () => ({
     `https://files.example.com/${url}`,
 }));
 jest.mock('../utils/inFlight', () => ({
+  clearWhatsappRepliesInFlight: jest.fn().mockResolvedValue(undefined),
   markWhatsappReplyInFlight: jest.fn().mockResolvedValue(undefined),
   isWhatsappReplyInFlight: jest.fn().mockResolvedValue(false),
 }));
@@ -175,6 +177,31 @@ describe('sendWhatsappReply', () => {
       'conn-1',
       expect.stringContaining('connect the number again'),
     );
+  });
+
+  it('forgets the sent parts of a reply that failed part way', async () => {
+    jest
+      .mocked(sendWhatsappMessage)
+      .mockResolvedValueOnce('wamid.1')
+      .mockRejectedValueOnce(new WhatsappGraphError('Media failed', 131053));
+
+    await expect(
+      sendWhatsappReply({ models, subdomain: 'tenant', payload }),
+    ).rejects.toThrow('Only part of the reply reached WhatsApp');
+    expect(clearWhatsappRepliesInFlight).toHaveBeenCalledWith('tenant', [
+      'wamid.1',
+    ]);
+  });
+
+  it('refuses composer HTML too long to convert safely', async () => {
+    await expect(
+      sendWhatsappReply({
+        models,
+        subdomain: 'tenant',
+        payload: { ...payload, content: '<b '.repeat(30_000) },
+      }),
+    ).rejects.toThrow('too long for WhatsApp');
+    expect(sendWhatsappMessage).not.toHaveBeenCalled();
   });
 
   it('rejects an empty reply', () => {

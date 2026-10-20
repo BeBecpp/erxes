@@ -30,16 +30,16 @@ export interface IWhatsappInboundContent {
   media?: IWhatsappMediaRef;
 }
 
-const MEDIA_KINDS: WhatsappMediaKind[] = [
+const MEDIA_KINDS: ReadonlySet<string> = new Set<WhatsappMediaKind>([
   'image',
   'video',
   'audio',
   'document',
   'sticker',
-];
+]);
 
 const isMediaKind = (type: string): type is WhatsappMediaKind =>
-  MEDIA_KINDS.includes(type as WhatsappMediaKind);
+  MEDIA_KINDS.has(type);
 
 const describeLocation = (
   location: NonNullable<WhatsappWebhookMessage['location']>,
@@ -66,26 +66,17 @@ const describeContacts = (
     .map((line) => `👤 ${line}`)
     .join('\n');
 
-/**
- * Maps a webhook message to inbox text and an optional media reference.
- * Returns null for events that are not conversation messages (reactions).
- */
-export const describeWhatsappMessage = (
+const describeMedia = (
   message: WhatsappWebhookMessage,
 ): IWhatsappInboundContent | null => {
   const { type } = message;
 
-  if (type === 'reaction') return null;
+  if (!isMediaKind(type)) return null;
 
-  if (type === 'text' && message.text) {
-    return { text: message.text.body };
-  }
+  const media = message[type];
 
-  if (isMediaKind(type)) {
-    const media = message[type];
-
-    if (media) {
-      return {
+  return media
+    ? {
         text: media.caption || '',
         media: {
           kind: type,
@@ -93,31 +84,53 @@ export const describeWhatsappMessage = (
           mimeType: media.mime_type,
           fileName: media.filename,
         },
-      };
+      }
+    : null;
+};
+
+/** The inbox text of a non-media message; undefined when erxes can't show its type. */
+const describeText = (message: WhatsappWebhookMessage): string | undefined => {
+  switch (message.type) {
+    case 'text':
+      return message.text?.body;
+    case 'location':
+      return message.location && describeLocation(message.location);
+    case 'interactive': {
+      const reply =
+        message.interactive?.button_reply || message.interactive?.list_reply;
+
+      return reply?.title;
     }
+    case 'button':
+      return message.button?.text;
+    case 'contacts':
+      return message.contacts?.length
+        ? describeContacts(message.contacts)
+        : undefined;
+    default:
+      return undefined;
   }
+};
 
-  if (type === 'location' && message.location) {
-    return { text: describeLocation(message.location) };
-  }
+/**
+ * Maps a webhook message to inbox text and an optional media reference.
+ * Returns null for events that are not conversation messages (reactions).
+ */
+export const describeWhatsappMessage = (
+  message: WhatsappWebhookMessage,
+): IWhatsappInboundContent | null => {
+  if (message.type === 'reaction') return null;
 
-  if (type === 'interactive' && message.interactive) {
-    const reply =
-      message.interactive.button_reply || message.interactive.list_reply;
+  const media = describeMedia(message);
 
-    if (reply) return { text: reply.title };
-  }
+  if (media) return media;
 
-  if (type === 'button' && message.button) {
-    return { text: message.button.text };
-  }
-
-  if (type === 'contacts' && message.contacts?.length) {
-    return { text: describeContacts(message.contacts) };
-  }
+  const text = describeText(message);
 
   return {
-    text: `This WhatsApp message type (${type}) can't be shown in erxes. Open WhatsApp to view it.`,
+    text:
+      text ??
+      `This WhatsApp message type (${message.type}) can't be shown in erxes. Open WhatsApp to view it.`,
   };
 };
 
@@ -133,31 +146,38 @@ const NAMED_ENTITIES: Record<string, string> = {
   nbsp: ' ',
 };
 
+const MAX_CODE_POINT = 0x10ffff;
+
 const decodeEntities = (text: string) =>
   text.replace(/&(#x[\da-f]+|#\d+|[a-z]+);/gi, (entity, code: string) => {
-    if (code[0] === '#') {
-      const value =
-        code[1] === 'x' || code[1] === 'X'
-          ? Number.parseInt(code.slice(2), 16)
-          : Number.parseInt(code.slice(1), 10);
+    if (code.startsWith('#')) {
+      const value = /^#x/i.test(code)
+        ? Number.parseInt(code.slice(2), 16)
+        : Number.parseInt(code.slice(1), 10);
 
-      return Number.isFinite(value) ? String.fromCodePoint(value) : entity;
+      // fromCodePoint throws past the last Unicode code point.
+      return Number.isFinite(value) && value <= MAX_CODE_POINT
+        ? String.fromCodePoint(value)
+        : entity;
     }
 
     return NAMED_ENTITIES[code.toLowerCase()] ?? entity;
   });
 
-/** Converts composer HTML to WhatsApp text, keeping bold, italic and strike formatting. */
+/**
+ * Converts composer HTML to WhatsApp text, keeping bold, italic and strike
+ * formatting. Tag bodies exclude `<` so every pattern runs in linear time.
+ */
 export const htmlToWhatsappText = (html: string): string =>
   decodeEntities(
     html
       .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<li[^>]*>/gi, '• ')
+      .replace(/<li[^<>]*>/gi, '• ')
       .replace(/<\/(p|div|li|blockquote|h[1-6])>/gi, '\n')
-      .replace(/<\/?(strong|b)(\s[^>]*)?>/gi, '*')
-      .replace(/<\/?(em|i)(\s[^>]*)?>/gi, '_')
-      .replace(/<\/?(s|del|strike)(\s[^>]*)?>/gi, '~')
-      .replace(/<[^>]*>/g, ''),
+      .replace(/<\/?(strong|b)(\s[^<>]*)?>/gi, '*')
+      .replace(/<\/?(em|i)(\s[^<>]*)?>/gi, '_')
+      .replace(/<\/?(s|del|strike)(\s[^<>]*)?>/gi, '~')
+      .replace(/<[^<>]*>/g, ''),
   )
     .replace(/\n{3,}/g, '\n\n')
     .trim();

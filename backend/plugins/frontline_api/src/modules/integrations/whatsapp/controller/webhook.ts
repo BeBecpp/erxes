@@ -6,6 +6,7 @@ import { getWhatsappConfig } from '@/integrations/whatsapp/config';
 import { receiveWhatsappChange } from '@/integrations/whatsapp/controller/receiveMessage';
 import { debugWhatsapp } from '@/integrations/whatsapp/debuggers';
 import { whatsappWebhookSchema } from '@/integrations/whatsapp/utils/payload';
+import { forEachSequentially } from '@/integrations/whatsapp/utils/sequence';
 import {
   hasValidWhatsappSignature,
   isWhatsappVerifyToken,
@@ -74,18 +75,14 @@ export const receiveWhatsappWebhook = async (
     return;
   }
 
+  const changes = payload.data.entry
+    .flatMap((entry) => entry.changes)
+    .filter((change) => change.field === 'messages');
+
   try {
-    for (const entry of payload.data.entry) {
-      for (const change of entry.changes) {
-        if (change.field === 'messages') {
-          await receiveWhatsappChange({
-            models,
-            subdomain,
-            value: change.value,
-          });
-        }
-      }
-    }
+    await forEachSequentially(changes, (change) =>
+      receiveWhatsappChange({ models, subdomain, value: change.value }),
+    );
 
     res.sendStatus(200);
   } catch (error) {

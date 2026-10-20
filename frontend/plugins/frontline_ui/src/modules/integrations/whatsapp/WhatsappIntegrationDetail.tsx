@@ -19,18 +19,33 @@ import {
   WhatsappEmbeddedSignupConfig,
 } from './graphql';
 import { WhatsappTranslationKey, useWhatsappTranslation } from './translations';
-import { useWhatsappEmbeddedSignup } from './useWhatsappEmbeddedSignup';
+import {
+  WhatsappSignupPhase,
+  useWhatsappEmbeddedSignup,
+} from './useWhatsappEmbeddedSignup';
 
 const STEPS = 2;
+const CONNECT_LABELS: Record<WhatsappSignupPhase, WhatsappTranslationKey> = {
+  idle: 'continueWithMeta',
+  waiting: 'openingMeta',
+  verifying: 'verifying',
+};
 const SETUP_FORM_ID = 'whatsapp-setup-form';
 
-const getSetupSchema = (t: (key: WhatsappTranslationKey) => string) =>
+/** A number not yet on the Cloud API registers only with the customer's own PIN. */
+const getSetupSchema = (
+  t: (key: WhatsappTranslationKey) => string,
+  needsRegistration: boolean,
+) =>
   z.object({
     name: z.string().trim().min(1, t('nameRequired')),
     brandId: z.string().min(1, t('brandRequired')),
     pin: z
       .string()
       .trim()
+      .refine((value) => !needsRegistration || value !== '', {
+        message: t('pinRequired'),
+      })
       .refine((value) => value === '' || /^\d{6}$/.test(value), {
         message: t('pinInvalid'),
       }),
@@ -88,11 +103,7 @@ const WhatsappConnectStep = ({
         ) : (
           <IconBrandWhatsapp />
         )}
-        {phase === 'verifying'
-          ? t('verifying')
-          : phase === 'waiting'
-          ? t('openingMeta')
-          : t('continueWithMeta')}
+        {t(CONNECT_LABELS[phase])}
       </Button>
       {sdkStatus === 'error' ? (
         <p role="alert" className="text-sm text-destructive">
@@ -157,7 +168,7 @@ const WhatsappSetupStep = ({
 }) => {
   const { t } = useWhatsappTranslation();
   const form = useForm<SetupValues>({
-    resolver: zodResolver(getSetupSchema(t)),
+    resolver: zodResolver(getSetupSchema(t, connection.needsRegistration)),
     defaultValues: {
       name: connection.verifiedName || connection.displayPhoneNumber,
       brandId: '',

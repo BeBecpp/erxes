@@ -150,9 +150,7 @@ export const IntegrationMoreColumnCell = ({
                 </Command.Item>
               ) : null}
               {integrationType === IntegrationType.WHATSAPP_MESSENGER ? (
-                <Command.Item value="repair">
-                  <WhatsappIntegrationRepair cell={cell} />
-                </Command.Item>
+                <WhatsappIntegrationRepair cell={cell} />
               ) : null}
               <Command.Item
                 value="move"

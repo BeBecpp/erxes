@@ -20,6 +20,16 @@ export const markWhatsappReplyInFlight = async (
   );
 };
 
+/** Forgets reply ids the inbox will never store, so their statuses are ignored. */
+export const clearWhatsappRepliesInFlight = async (
+  subdomain: string,
+  wamids: string[],
+): Promise<void> => {
+  if (!wamids.length) return;
+
+  await redis.del(...wamids.map((wamid) => inFlightKey(subdomain, wamid)));
+};
+
 export const isWhatsappReplyInFlight = async (
   subdomain: string,
   wamid: string,

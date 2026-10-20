@@ -14,7 +14,9 @@ jest.mock('../controller/store', () => ({
   ensureWhatsappConversation: jest.fn(),
   createWhatsappInboxMessage: jest.fn(),
 }));
-jest.mock('../controller/statuses', () => ({ receiveWhatsappStatus: jest.fn() }));
+jest.mock('../controller/statuses', () => ({
+  receiveWhatsappStatus: jest.fn(),
+}));
 jest.mock('../utils/media', () => ({ storeWhatsappMedia: jest.fn() }));
 
 const connection = {
@@ -54,9 +56,7 @@ beforeEach(() => {
   jest
     .mocked(getOrCreateWhatsappCustomer)
     .mockResolvedValue({ _id: 'cust-1', erxesApiId: 'core-1' } as never);
-  jest
-    .mocked(ensureWhatsappConversation)
-    .mockResolvedValue('whatsapp-cust-1');
+  jest.mocked(ensureWhatsappConversation).mockResolvedValue('whatsapp-cust-1');
 });
 
 it('stores an inbound text as an inbox message of the contact conversation', async () => {

@@ -1,14 +1,14 @@
 import { useMutation } from '@apollo/client';
 import type { CellContext } from '@tanstack/react-table';
 import { IconTool } from '@tabler/icons-react';
-import { Spinner, toast } from 'erxes-ui';
+import { Command, Spinner, toast } from 'erxes-ui';
 import type { IIntegration } from '@/integrations/types/Integration';
 import { parseRepairResult } from '@/integrations/utils/repairResult';
 import { IntegrationType } from '@/types/Integration';
 import { WHATSAPP_REPAIR } from './graphql';
 import { useWhatsappTranslation } from './translations';
 
-/** Row action: re-registers the number if needed and re-subscribes webhooks. */
+/** Row menu item: re-registers the number if needed and re-subscribes webhooks. */
 export const WhatsappIntegrationRepair = ({
   cell,
 }: {
@@ -51,24 +51,13 @@ export const WhatsappIntegrationRepair = ({
   };
 
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={handleRepair}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          handleRepair();
-        }
-      }}
-      className="flex w-full items-center gap-2"
-    >
+    <Command.Item value="repair" onSelect={handleRepair} disabled={loading}>
       {loading ? (
         <Spinner className="size-4 text-primary" />
       ) : (
         <IconTool size={16} />
       )}
       {t('repair')}
-    </div>
+    </Command.Item>
   );
 };

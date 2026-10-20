@@ -15,6 +15,7 @@ import {
   whatsappTextToHtml,
 } from '@/integrations/whatsapp/utils/content';
 import { storeWhatsappMedia } from '@/integrations/whatsapp/utils/media';
+import { forEachSequentially } from '@/integrations/whatsapp/utils/sequence';
 import {
   WhatsappWebhookContact,
   WhatsappWebhookPayload,
@@ -71,9 +72,11 @@ export const receiveWhatsappMessage = async ({
 
   if (!described) return false;
 
-  if (await models.ConversationMessages.exists({
-    _id: getWhatsappInboxMessageId(message.id),
-  })) {
+  if (
+    await models.ConversationMessages.exists({
+      _id: getWhatsappInboxMessageId(message.id),
+    })
+  ) {
     return false;
   }
 
@@ -172,26 +175,29 @@ export const receiveWhatsappChange = async ({
     erxesApiId: string;
   };
 
-  for (const rawMessage of value.messages || []) {
-    await receiveWhatsappMessage({
+  // In order: a contact's first messages create its customer and conversation.
+  await forEachSequentially(value.messages || [], (rawMessage) =>
+    receiveWhatsappMessage({
       models,
       subdomain,
       connection: attached,
       rawMessage,
       contacts: value.contacts,
-    });
-  }
+    }),
+  );
 
-  for (const rawStatus of value.statuses || []) {
+  const statuses = (value.statuses || []).flatMap((rawStatus) => {
     const status = whatsappStatusSchema.safeParse(rawStatus);
 
-    if (status.success) {
-      await receiveWhatsappStatus({
-        models,
-        subdomain,
-        integrationId: attached.erxesApiId,
-        status: status.data,
-      });
-    }
-  }
+    return status.success ? [status.data] : [];
+  });
+
+  await forEachSequentially(statuses, (status) =>
+    receiveWhatsappStatus({
+      models,
+      subdomain,
+      integrationId: attached.erxesApiId,
+      status,
+    }),
+  );
 };

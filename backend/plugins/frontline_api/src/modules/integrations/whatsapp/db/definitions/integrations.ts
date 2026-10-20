@@ -36,7 +36,8 @@ export const whatsappIntegrationSchema = new Schema(
     registrationPin: {
       type: String,
       select: false,
-      label: 'Two-step verification PIN used to register the number',
+      label:
+        "The customer's two-step verification PIN, reused to re-register on repair",
     },
     healthStatus: {
       type: String,

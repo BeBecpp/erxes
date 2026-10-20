@@ -59,17 +59,15 @@ export const useMessageAttachments = (
           10,
         ) || DEFAULT_MAXIMUM_BYTES;
       // WhatsApp limits depend on the media type, so each file has its own cap.
+      const getProviderMaximumBytes = (file: File) => {
+        if (isWhatsapp) return getWhatsappAttachmentMaximumBytes(file.type);
+        if (isTelegram) return TELEGRAM_MAXIMUM_BYTES;
+        if (isDiscord) return DISCORD_MAXIMUM_BYTES;
+
+        return DEFAULT_MAXIMUM_BYTES;
+      };
       const getMaximumBytes = (file: File) =>
-        Math.min(
-          configuredMaximumBytes,
-          isWhatsapp
-            ? getWhatsappAttachmentMaximumBytes(file.type)
-            : isTelegram
-            ? TELEGRAM_MAXIMUM_BYTES
-            : isDiscord
-            ? DISCORD_MAXIMUM_BYTES
-            : DEFAULT_MAXIMUM_BYTES,
-        );
+        Math.min(configuredMaximumBytes, getProviderMaximumBytes(file));
       const oversizedFile = selectedFiles.find(
         (file) => file.size > getMaximumBytes(file),
       );

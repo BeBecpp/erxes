@@ -1,4 +1,3 @@
-import { randomInt } from 'node:crypto';
 import { z } from 'zod';
 import { generateModels, IModels } from '~/connectionResolvers';
 import { IWhatsappIntegrationDocument } from '@/integrations/whatsapp/@types/integrations';
@@ -46,20 +45,32 @@ export const whatsappCreateDataSchema = z
   })
   .strict();
 
-const generatePin = () => randomInt(0, 1_000_000).toString().padStart(6, '0');
+const PIN_REQUIRED_ON_CREATE =
+  "Enter this number's 6-digit two-step verification PIN to register it with WhatsApp.";
+const PIN_REQUIRED_ON_REPAIR =
+  'WhatsApp needs this number registered again with its 6-digit two-step verification PIN. Remove this integration and connect the number again with its PIN.';
 
 /**
- * Registers a number that is not yet on the Cloud API. Without a PIN, erxes
- * sets one; a number that already has two-step verification needs its PIN.
+ * Registers a number that is not yet on the Cloud API with the customer's
+ * own two-step verification PIN: it becomes the number's PIN when none is
+ * set, so erxes never invents one the business would not know.
  */
-const registerIfNeeded = async (
-  models: IModels,
-  connection: IWhatsappIntegrationDocument,
-  pin?: string,
-): Promise<void> => {
+const registerIfNeeded = async ({
+  models,
+  connection,
+  pin,
+  missingPinMessage,
+}: {
+  models: IModels;
+  connection: IWhatsappIntegrationDocument;
+  pin?: string;
+  missingPinMessage: string;
+}): Promise<void> => {
   if (connection.phoneStatus === 'CONNECTED') return;
 
-  const registrationPin = pin || connection.registrationPin || generatePin();
+  const registrationPin = pin || connection.registrationPin;
+
+  if (!registrationPin) throw new Error(missingPinMessage);
 
   try {
     await registerPhoneNumber(
@@ -73,9 +84,7 @@ const registerIfNeeded = async (
       error.code === WHATSAPP_ERROR_CODES.PIN_MISMATCH
     ) {
       throw new Error(
-        pin
-          ? 'The two-step verification PIN is incorrect. Check it in WhatsApp Manager and try again.'
-          : 'This number already has a two-step verification PIN. Enter its 6-digit PIN to finish.',
+        'The two-step verification PIN is incorrect. Check it in WhatsApp Manager and try again.',
       );
     }
 
@@ -175,7 +184,12 @@ export const whatsappCreateIntegration = async ({
   let phoneStatus: string | undefined;
 
   try {
-    await registerIfNeeded(models, connection, parsed.data.pin);
+    await registerIfNeeded({
+      models,
+      connection,
+      pin: parsed.data.pin,
+      missingPinMessage: PIN_REQUIRED_ON_CREATE,
+    });
     phoneStatus = await connectWebhooks(models, subdomain, connection);
   } catch (error) {
     await releaseWabaIfUnused(models, subdomain, connection.wabaId);
@@ -271,7 +285,11 @@ export const whatsappRepairIntegration = async ({
   try {
     // Also claims WABAs connected before ownership was recorded.
     await claimWaba(connection.wabaId, subdomain);
-    await registerIfNeeded(models, connection);
+    await registerIfNeeded({
+      models,
+      connection,
+      missingPinMessage: PIN_REQUIRED_ON_REPAIR,
+    });
 
     const phoneStatus = await connectWebhooks(models, subdomain, connection);
 

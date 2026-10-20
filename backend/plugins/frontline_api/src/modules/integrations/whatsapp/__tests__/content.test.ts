@@ -70,6 +70,22 @@ describe('HTML conversion', () => {
       ),
     ).toBe('Hello *there* & _welcome_\na < b\n• one');
   });
+
+  it('keeps an out-of-range numeric entity instead of throwing', () => {
+    expect(htmlToWhatsappText('<p>&#99999999; &#x41;</p>')).toBe(
+      '&#99999999; A',
+    );
+  });
+
+  it('converts unclosed tags in linear time', () => {
+    const started = Date.now();
+
+    htmlToWhatsappText('<b '.repeat(20_000));
+    htmlToWhatsappText('<'.repeat(60_000));
+
+    // The previous patterns took seconds on input this size.
+    expect(Date.now() - started).toBeLessThan(500);
+  });
 });
 
 describe('splitWhatsappText', () => {

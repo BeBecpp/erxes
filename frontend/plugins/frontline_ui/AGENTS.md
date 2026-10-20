@@ -6,7 +6,7 @@
 - **Project:** `frontline_ui`
 - **Layer:** `Frontend UI`
 - **Path:** `frontend/plugins/frontline_ui`
-- **Last synchronized:** `2026-10-19`
+- **Last synchronized:** `2026-10-20`
 
 ## Scope
 
@@ -103,7 +103,9 @@
   Meta's popup (business portfolio, WABA, phone number and its verification
   happen there — no Facebook Page or personal account list), then a setup step
   shows the verified number and collects the inbox name, brand and, only for an
-  unregistered number, an optional 6-digit PIN. Creation goes through the
+  unregistered number, a required 6-digit PIN: the customer's existing
+  two-step verification PIN, or new digits that become it. Creation goes
+  through the
   shared `useIntegrationAdd` and shows its own success toast. Closing the
   sheet or choosing another number before finishing discards the unused
   connection with `frontlineWhatsappDiscardConnection`. Row actions edit name/brand (number shown
@@ -789,7 +791,8 @@ owns the setup form and connection actions.
   `IntegrationsCreateExternalIntegration` with kind `whatsapp-messenger` and
   data `{ connectionId, pin? }`.
 - The Facebook JS SDK (`connect.facebook.net`) loaded at runtime for Embedded
-  Signup; messages are accepted only from HTTPS `facebook.com` origins.
+  Signup; messages are accepted only from HTTPS `facebook.com` origins, checked
+  first in the `message` listener itself.
 
 - `ui-modules` `AutomationConditionalField` for conditional action values; it
   is a drop-in for `Form.Field` taking the action form, the field names, a label
@@ -1111,9 +1114,10 @@ to, bouncedRecipients, retryable, canRetry }` for its delivery state;
   `useWhatsappTranslation` returns a stable `t`, so the signup hook's message
   listener is not re-bound on every render. `WhatsappIntegrationRepair` lives
   in its own file so `IntegrationMoreColumn` imports it statically without
-  pulling the lazily loaded `WhatsappIntegrationActions` into the main chunk.
-  The 24-hour banner reads the newest messages page with the same query and
-  variables as `ConversationMessages` (`cache-first`), so it adds no request;
+  pulling the lazily loaded `WhatsappIntegrationActions` into the main chunk;
+  it renders its own `Command.Item` and repairs on select.
+  The 24-hour banner (an `<output>` live region) reads the newest messages
+  page with the same query and variables as `ConversationMessages` (`cache-first`), so it adds no request;
   it stays hidden when the customer's last message is not on that page.
   `getWhatsappAttachmentMaximumBytes` must mirror the backend's
   `getOutgoingMediaType`. A per-call `onCompleted` replaces

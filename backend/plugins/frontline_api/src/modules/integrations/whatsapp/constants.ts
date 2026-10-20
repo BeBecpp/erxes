@@ -21,6 +21,8 @@ export const WHATSAPP_MESSAGE_PREFIX = 'whatsapp-';
 export const WHATSAPP_CUSTOMER_PREFIX = 'whatsapp-';
 
 export const WHATSAPP_TEXT_LIMIT = 4096;
+/** Composer HTML accepted for one reply; bounds the HTML-to-text conversion. */
+export const WHATSAPP_REPLY_HTML_LIMIT = 64 * 1024;
 export const WHATSAPP_MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 export const WHATSAPP_REQUEST_TIMEOUT_MS = 20_000;
 export const WHATSAPP_DOWNLOAD_TIMEOUT_MS = 60_000;

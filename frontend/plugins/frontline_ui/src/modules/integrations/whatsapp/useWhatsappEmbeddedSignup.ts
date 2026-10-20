@@ -5,6 +5,7 @@ import {
   EmbeddedSignupEvent,
   FacebookSdk,
   embeddedSignupLoginOptions,
+  isFacebookOrigin,
   loadFacebookSdk,
   parseEmbeddedSignupMessage,
 } from './embeddedSignup';
@@ -135,6 +136,9 @@ export const useWhatsappEmbeddedSignup = ({
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
+      // Only Meta's Embedded Signup window may report a result.
+      if (!isFacebookOrigin(event.origin)) return;
+
       const parsed = parseEmbeddedSignupMessage(event.origin, event.data);
 
       if (!parsed || session.current.settled) return;

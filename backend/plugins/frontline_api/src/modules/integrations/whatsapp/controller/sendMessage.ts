@@ -3,12 +3,17 @@ import { IModels } from '~/connectionResolvers';
 import { IWhatsappCustomerDocument } from '@/integrations/whatsapp/@types/customers';
 import {
   WHATSAPP_ERROR_CODES,
+  WHATSAPP_REPLY_HTML_LIMIT,
   WHATSAPP_TEXT_LIMIT,
 } from '@/integrations/whatsapp/constants';
 import { getWhatsappCustomerIdFromConversation } from '@/integrations/whatsapp/controller/store';
 import { debugWhatsapp } from '@/integrations/whatsapp/debuggers';
 import { generateWhatsappAttachmentUrl } from '@/integrations/whatsapp/utils/attachments';
-import { markWhatsappReplyInFlight } from '@/integrations/whatsapp/utils/inFlight';
+import {
+  clearWhatsappRepliesInFlight,
+  markWhatsappReplyInFlight,
+} from '@/integrations/whatsapp/utils/inFlight';
+import { forEachSequentially } from '@/integrations/whatsapp/utils/sequence';
 import {
   WhatsappGraphError,
   WhatsappOutgoingContent,
@@ -24,7 +29,14 @@ import {
 const replySchema = z.object({
   integrationId: z.string().min(1),
   conversationId: z.string().min(1),
-  content: z.string().optional().default(''),
+  content: z
+    .string()
+    .max(
+      WHATSAPP_REPLY_HTML_LIMIT,
+      'This reply is too long for WhatsApp. Shorten it and send again.',
+    )
+    .optional()
+    .default(''),
   attachments: z
     .array(
       z
@@ -110,6 +122,13 @@ export const describeWhatsappSendError = (error: unknown): string => {
   }
 };
 
+const logInFlightError = (error: unknown) =>
+  debugWhatsapp(
+    `WhatsApp in-flight marker failed: ${
+      error instanceof Error ? error.message : String(error)
+    }`,
+  );
+
 const isConnectionError = (error: unknown) =>
   error instanceof WhatsappGraphError &&
   (error.code === WHATSAPP_ERROR_CODES.TOKEN_EXPIRED ||
@@ -128,7 +147,10 @@ export const sendWhatsappReply = async ({
   const parsed = replySchema.safeParse(payload);
 
   if (!parsed.success) {
-    throw new Error('Invalid WhatsApp reply data');
+    throw new Error(
+      parsed.error.issues.find(({ path }) => path[0] === 'content')?.message ||
+        'Invalid WhatsApp reply data',
+    );
   }
 
   const { integrationId, conversationId, content, attachments } = parsed.data;
@@ -153,39 +175,37 @@ export const sendWhatsappReply = async ({
   const recipient = getWhatsappRecipient(customer);
   const messageIds: string[] = [];
 
-  for (const part of parts) {
-    let wamid: string;
-
-    try {
-      wamid = await sendWhatsappMessage(
+  try {
+    // In order: the customer must read the parts as the agent wrote them.
+    await forEachSequentially(parts, async (part) => {
+      const wamid = await sendWhatsappMessage(
         connection.accessToken,
         connection.phoneNumberId,
         recipient,
         part,
       );
-    } catch (error) {
-      const message = describeWhatsappSendError(error);
 
-      if (isConnectionError(error)) {
-        await models.WhatsappIntegrations.markHealth(connection._id, message);
-      }
+      messageIds.push(wamid);
 
-      throw new Error(
-        messageIds.length
-          ? `Only part of the reply reached WhatsApp. ${message}`
-          : message,
-      );
+      // The part is already delivered; a missing marker only loses early statuses.
+      await markWhatsappReplyInFlight(subdomain, wamid).catch(logInFlightError);
+    });
+  } catch (error) {
+    const message = describeWhatsappSendError(error);
+
+    if (isConnectionError(error)) {
+      await models.WhatsappIntegrations.markHealth(connection._id, message);
     }
 
-    messageIds.push(wamid);
+    // A failed reply is not stored, so statuses of its sent parts must not wait for it.
+    await clearWhatsappRepliesInFlight(subdomain, messageIds).catch(
+      logInFlightError,
+    );
 
-    // The part is already delivered; a missing marker only loses early statuses.
-    await markWhatsappReplyInFlight(subdomain, wamid).catch((error) =>
-      debugWhatsapp(
-        `WhatsApp in-flight marker failed: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      ),
+    throw new Error(
+      messageIds.length
+        ? `Only part of the reply reached WhatsApp. ${message}`
+        : message,
     );
   }
 

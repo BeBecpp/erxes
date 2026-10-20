@@ -6,7 +6,7 @@
 - **Project:** `frontline_api`
 - **Layer:** `Backend API`
 - **Path:** `backend/plugins/frontline_api`
-- **Last synchronized:** `2026-10-19`
+- **Last synchronized:** `2026-10-20`
 
 ## Scope
 
@@ -67,14 +67,18 @@
   the 30-second signup code for a business token, checks it with
   `debug_token` (this app, both WhatsApp scopes, the shared WABA), confirms
   the number belongs to the WABA, and saves a pending connection. Creating the
-  `whatsapp-messenger` integration registers the number when needed (a given
-  or generated 6-digit PIN), subscribes the WABA with a per-tenant
+  `whatsapp-messenger` integration registers the number when needed with the
+  customer's own 6-digit PIN (erxes never generates one; registration without
+  it is refused), subscribes the WABA with a per-tenant
   `override_callback_uri`, and attaches the connection. Inbound text, media,
   locations, contacts and button replies become canonical inbox messages, one
   conversation per contact; sent/delivered/read statuses move
   `deliveryStatus` forward, and a failed delivery adds one internal note.
-  Replies convert composer HTML to WhatsApp text, split at 4096 characters and
-  send attachments as media links. Repair re-registers and re-subscribes.
+  Replies accept at most 64 KB of composer HTML, convert it to WhatsApp text,
+  split at 4096 characters and send attachments as media links, in order; a
+  reply that fails part way clears the in-flight markers of its sent parts.
+  Repair re-registers with the stored customer PIN (or asks to reconnect with
+  it when none is stored) and re-subscribes.
   A status that arrives before its reply is stored waits briefly, then fails
   the webhook so Meta redelivers it. An unattached signup connection is
   discarded when the setup sheet closes and otherwise expires after a day.
@@ -1357,7 +1361,9 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
   Core customer `whatsapp-<customer _id>`. `pendingSince` is set on a signup
   connection until it is attached; a TTL index deletes it after 24 hours.
   Redis key `whatsapp:in-flight:<subdomain>:<wamid>` (15 minutes) marks a
-  reply sent to WhatsApp whose inbox message may not be stored yet.
+  reply sent to WhatsApp whose inbox message may not be stored yet; it is
+  deleted when the reply fails, since the inbox then stores nothing.
+  `registrationPin` is the customer's own two-step verification PIN.
 - SaaS only: `whatsapp_waba_owners` in the cross-workspace database
   `erxes_frontline_whatsapp` (`wabaOwnership.ts`) maps a WABA id to the
   owning subdomain. It is the plugin's only data outside the tenant
@@ -1415,6 +1421,10 @@ customerIds, tagIds, propertiesData: JSON)` — the public messenger ticket
   other attached number shares it. Core customers are looked up and created
   under the stable `whatsapp-<customer _id>` so concurrent webhooks converge;
   a status for an in-flight reply is never acknowledged before it is applied.
+  Registration never invents a PIN. Webhook changes, messages, statuses and
+  reply parts are processed in order through `utils/sequence.ts`
+  (`forEachSequentially`), not in parallel. Composer HTML conversion keeps
+  `<` out of every tag pattern so it stays linear-time.
   On SaaS one shared Meta app keeps a single callback per WABA, so a WABA is
   claimed (`claimWaba`) before its webhook is pointed at a workspace, released
   when the workspace's last number from it is removed or a failed create
