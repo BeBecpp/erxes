@@ -23,7 +23,7 @@ import { SelectBranches, SelectDepartments, SelectMember } from 'ui-modules';
 import { SelectAccount } from '~/modules/settings/account/components/SelectAccount';
 import { useTransactionsQueryParams } from '../hooks/useTransactionVars';
 
-const SIDEBAR_FILTER_KEYS = ['branchId', 'departmentId', 'journal'];
+const SIDEBAR_FILTER_KEYS = new Set(['branchId', 'departmentId', 'journal']);
 
 const TransactionsFilterPopover = ({
   sidebarFilters,
@@ -34,7 +34,7 @@ const TransactionsFilterPopover = ({
   const queryParams = useTransactionsQueryParams();
   const hasFilters = Object.entries(queryParams || {}).some(
     ([key, value]) =>
-      value !== null && !(sidebarFilters && SIDEBAR_FILTER_KEYS.includes(key)),
+      value !== null && !(sidebarFilters && SIDEBAR_FILTER_KEYS.has(key)),
   );
 
   return (
